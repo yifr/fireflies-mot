@@ -107,10 +107,98 @@ end
                 ys[n, t] = {(:y, n, t)} ~ truncated_normal(prev_y, step_size, 0, scene_size)
             end
 
+            for firefly in 1:n_fireflies
+                # Update blinking
+                blinking[firefly, t] = {(:blinking, firefly, t)} ~ bernoulli(blink_freqs[firefly])
+            end
             # Update blinking
             blinking[n, t] = {(:blinking, n, t)} ~ bernoulli(blink_freqs[n])
         end
     end
     
     return Dict("xs" => xs, "ys" => ys, "blink_freqs" => blink_freqs, "blinking" => blinking, "colors" => colors)
+end
+
+
+@gen function firefly_gen_and_observe(scene_size::Int, steps::Int, max_fireflies::Int)
+    """
+    This function describes a simple firefly model where a single firefly moves in a random walk and blinks at a fixed frequency.
+
+    Args:
+    - scene_size: the size of the grid
+    - steps: the number of steps to simulate
+    - max_fireflies: Maximum number of fireflies
+
+    Returns:
+    - Dict with keys "xs", "ys", "blink_freq", "blinking"
+
+    Traces over:
+    - x: the x-coordinate of the firefly
+    - y: the y-coordinate of the firefly
+    - blinking: whether the firefly is blinking 
+    """
+
+    n_fireflies = {(:n_fireflies)} ~ uniform_discrete(1, max_fireflies)
+        
+    # sample number of fireflies
+    xs = zeros(Float64, (n_fireflies, steps))
+    ys = zeros(Float64, (n_fireflies, steps))
+    vxs = zeros(Float64, (n_fireflies, steps))
+    vys = zeros(Float64, (n_fireflies, steps))
+    blinking = zeros(Int, (n_fireflies, steps))
+    pixels = zeros(Int, (steps, scene_size, scene_size)) .- 1
+
+    step_size = 0.5
+    blink_freqs = zeros(Float64, n_fireflies)
+    colors = zeros(Int, n_fireflies)
+
+    blink_opts = [0.1, 0.15, 0.2, 0.25]
+    
+    # Initialize firefly colors and blinking frequencies
+    for n in 1:n_fireflies
+        blink_freq = {(:blink_freq, n)} ~ labeled_cat(blink_opts, uniprobs(blink_opts))
+        blink_freqs[n] = blink_freq
+
+        color = {(:color, n)} ~ uniform_discrete(1, max_fireflies)
+        colors[n] = color
+    end
+
+    for t in 1:steps
+        for n in 1:n_fireflies
+            # Update motion
+            if t == 1
+                # We'll initialize the position uniformly in our grid
+                xs[n, t] = {(:x, n, t)} ~ uniform(1, scene_size)
+                ys[n, t] = {(:y, n, t)} ~ uniform(1, scene_size)
+            else
+                prev_x = xs[n, t - 1]
+                prev_y = ys[n, t - 1]
+                
+                xs[n, t] = {(:x, n, t)} ~ truncated_normal(prev_x, step_size, 1, scene_size)
+                ys[n, t] = {(:y, n, t)} ~ truncated_normal(prev_y, step_size, 1, scene_size)
+            end
+
+            # Update blinking
+            blinking[n, t] = {(:blinking, n, t)} ~ bernoulli(blink_freqs[n])
+        end
+
+        for x in 1:scene_size
+            for y in 1:scene_size
+                # Observe blinks at locations
+                for n in 1:n_fireflies
+                    if blinking[n, t] == 1
+                        # Calculate distance from firefly to current pixel
+                        if Int(trunc(xs[n, t])) == x && Int(trunc(ys[n, t])) == y
+                            pixels[t, x, y] = {(:pixels, t, x, y)} ~ labeled_cat([0, colors[n]], [0.01, 0.99])
+                        end
+                    end
+                end
+                if pixels[t, x, y] == -1
+                    pixels[t, x, y] = {(:pixels, t, x, y)} ~ labeled_cat([0, 0], [0.99, 0.01])
+                end
+            end
+        end
+    end
+    
+    return Dict("pixels" => pixels, "xs" => xs, "ys" => ys, "blink_freqs" => blink_freqs, "blinking" => blinking, "colors" => colors)
 end
