@@ -146,7 +146,6 @@ end
     vxs = zeros(Float64, (n_fireflies, steps))
     vys = zeros(Float64, (n_fireflies, steps))
     blinking = zeros(Int, (n_fireflies, steps))
-    pixels = zeros(Int, (steps, scene_size, scene_size)) .- 1
 
     step_size = 0.5
     blink_freqs = zeros(Float64, n_fireflies)
@@ -181,24 +180,25 @@ end
             # Update blinking
             blinking[n, t] = {(:blinking, n, t)} ~ bernoulli(blink_freqs[n])
         end
-
-        for x in 1:scene_size
-            for y in 1:scene_size
-                # Observe blinks at locations
-                for n in 1:n_fireflies
-                    if blinking[n, t] == 1
-                        # Calculate distance from firefly to current pixel
-                        if Int(trunc(xs[n, t])) == x && Int(trunc(ys[n, t])) == y
-                            pixels[t, x, y] = {(:pixels, t, x, y)} ~ labeled_cat([0, colors[n]], [0.01, 0.99])
-                        end
-                    end
-                end
-                if pixels[t, x, y] == -1
-                    pixels[t, x, y] = {(:pixels, t, x, y)} ~ labeled_cat([0, 0], [0.99, 0.01])
-                end
-            end
-        end
     end
     
-    return Dict("pixels" => pixels, "xs" => xs, "ys" => ys, "blink_freqs" => blink_freqs, "blinking" => blinking, "colors" => colors)
+    return Dict("xs" => xs, "ys" => ys, "blink_freqs" => blink_freqs, "blinking" => blinking, "colors" => colors)
+end
+
+function render_fireflies(trace, step)
+    args = get_args(trace)
+    scene_size = args[1]
+    pixels = zeros(Int, scene_size, scene_size)
+    choices = get_choices(trace)
+    n_fireflies = choices[:n_fireflies]
+    for n in 1:n_fireflies
+        blinking = choices[(:blinking, n, step)]
+        if blinking == 1
+            x = choices[(:x, n, step)]
+            y = choices[(:y, n, step)]
+            color = choices[(:color, n)]
+            pixels[Int(trunc(x)), Int(trunc(y))] = color
+        end
+    end
+    return pixels
 end

@@ -48,14 +48,16 @@ function observe_at_time(trace, step)
     scene_size = args[1]
     pixels = zeros(Int, scene_size, scene_size)
     choices = get_choices(trace)
+    chm = choicemap()
     for x in 1:scene_size
         for y in 1:scene_size
-            pixels[x, y] = choices[(:pixels, x, y, step)]
+            chm[(:pixels, step, x, y)] = choices[(:pixels, step, x, y)]
         end
     end
     
-    return pixels
+    return chm
 end
+
 
 """
 The default proposal doesn't work under the current model because of how fireflies are indexed.
@@ -64,19 +66,24 @@ the update step will be unable to constrain the observation of (:pos, n>1, t) an
 """
 @gen function particle_filter_default_proposal(trace, model, num_particles::Int, num_samples::Int)
     scene_size, steps, max_fireflies = get_args(trace)
-    init_obs = get_traced_variable_observation(trace, step=1)
+    init_obs = observe_at_time(trace, 1)
     state = Gen.initialize_particle_filter(model, (scene_size, 1, max_fireflies,), init_obs, num_particles)
     
-    println(init_obs)
     for t=2:steps
+        println("t=$t")
         Gen.maybe_resample!(state, ess_threshold=num_particles/2)
-        obs = get_traced_variable_observation(trace, step=t)
-        println("\n\n(T=$t) Observations: \n$obs\n")
+        obs = observe_at_time(trace, t)
         Gen.particle_filter_step!(state, (scene_size, t, max_fireflies,), (NoChange(), UnknownChange(), NoChange(),), obs)
     end
-    
+
     # return a sample of unweighted traces from the weighted collection
-    return Gen.sample_unweighted_traces(state, num_samples)
+    try 
+        println("Success")
+        return Gen.sample_unweighted_traces(state, num_samples)
+    catch e
+        println("Failed")
+        return state.traces[1:5]
+    end
 end;
 
 
