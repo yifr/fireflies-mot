@@ -108,7 +108,7 @@ function plot_trace_and_observations(trace)
             if i == 0
                 return RGB(0, 0, 0)
             end
-            color = palette(:default)[i]
+            color = palette(:default)[Int(trunc(i))]
         end
 
         # Julia's heatmap indexes the y-axis from 1 -> n (vs. plot which goes n -> 1)
@@ -123,8 +123,7 @@ function plot_trace_and_observations(trace)
     return anim
 end
 
-
-function visualize_inference(gt_trace, inferred_traces; firefly_size=4)
+function visualize_inference(gt_trace, inferred_traces, steps; firefly_size=4)
     """
     Plots the trajectories of multiple fireflies in a grid.
     
@@ -136,27 +135,68 @@ function visualize_inference(gt_trace, inferred_traces; firefly_size=4)
 
     args = get_args(gt_trace)
     retvals = get_retval(gt_trace)
-
+    gt_choices = get_choices(gt_trace)
     scene_size = args[1]
-    steps = args[2]
 
     firefly_hues = retvals["colors"]
-    xs = retvals["xs"]
-    ys = retvals["ys"]
+    gt_xs = retvals["xs"]
+    gt_ys = retvals["ys"]
     blinks = retvals["blinking"]
     
     # Plot trajectories from inferred traces
     fig = plot(layout=grid(1, 2), size=(800, 400), background_color=RGB(0, 0, 0), showaxis=true, ticks=false)
-    for trace in inferred_traces
-        n_fireflies = get_choices(trace)[:n_fireflies]
-        for t in 1:steps
+    anim = Plots.@animate for t in 1:steps 
+        println("Plotting step $t")
+        empty!(fig[1])
+        empty!(fig[2])
+        # plot ground truth location
+        for n in 1:get_choices(gt_trace)[:n_fireflies]
+            color = Int(firefly_hues[n])
+            blinking = Int(blinks[n, t])
+            gt_x = gt_choices[(:x, n, t)]
+            gt_y = gt_choices[(:y, n, t)]
+            # plot!(fig[1], xs[n, 1:t], ys[n, 1:t], color=color, markersize=firefly_size, label=nothing)
+            if blinking == 1
+                scatter!(fig[1], [gt_x], [gt_y], color=color, markersize=firefly_size, markershape=:circle, label=nothing, xlims=(0, scene_size), ylims=(0, scene_size))
+            else
+                scatter!(fig[1], [gt_x], [gt_y], color=color, markersize=firefly_size, label=nothing, markershape=:x, xlims=(0, scene_size), ylims=(0, scene_size))
+            end
+        end
+
+        for trace in inferred_traces
+            n_fireflies = get_choices(trace)[:n_fireflies]
             for n in 1:n_fireflies
-                xs = get_retval(trace)["xs"]
-                ys = get_retval(trace)["ys"]
-                color = Int(get_retval(trace)["colors"][n])
-                plot!(fig[1], xs[n, 1:t], ys[n, 1:t], color=color, markersize=firefly_size, label=nothing)
+                xs = get_choices(trace)[(:x, n, t)]
+                ys = get_choices(trace)[(:y, n, t)]
+                color = Int(get_choices(trace)[(:color, n)])
+                # plot!(fig[2], xs, ys color=color, markersize=firefly_size, label=nothing)
+                blinking = get_choices(trace)[(:blinking, n, t)]
+                if blinking == 1
+                    scatter!(fig[2], [xs], [ys], color=color, markersize=firefly_size, label=nothing, xlims=(0, scene_size), ylims=(0, scene_size))
+                else
+                    scatter!(fig[2], [xs], [ys], color=color, markersize=firefly_size, label=nothing, markershape=:x, xlims=(0, scene_size), ylims=(0, scene_size))
+                end
             end
         end
     end
+    return anim
 
 end
+
+"""
+Visualization ToDos:
+
+Rewrite more composable functions for plotting traces and observations:
+
+    - animate(frames, save_path) 
+        --> animates a list of frames and saves to a path
+
+    - plot_trace(trace, step; start_step=1, figure=nothing, panel=1) 
+        --> plots a trace up until a given step, or overlays a trace on a figure (optionally on a specified pane) if provided
+
+    - plot_observations(trace, step; start_step=1, figure=nothing, panel=1) 
+        --> plots observation up until a given step, or overlays on a figure (optionally on a specified pane) if provided
+
+    - overlay_ground_truth(trace, figure, step)
+        --> Adds ground truth with different markers to a figure
+"""

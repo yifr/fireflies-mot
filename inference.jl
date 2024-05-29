@@ -1,4 +1,5 @@
 using Gen
+include("./visualizations.jl")
 
 function get_traced_variable_observation(trace; step)
     args = get_args(trace)
@@ -42,16 +43,21 @@ function get_traced_variable_observation(trace; step)
     return chm
 end
 
+function clip(num, low, hi)
+    return max(low, min(num, hi))
+end
 
 function observe_at_time(trace, step)
     args = get_args(trace)
     scene_size = args[1]
     pixels = zeros(Int, scene_size, scene_size)
     choices = get_choices(trace)
+    #var = 0.001
+    #noise = normal.(zeros(scene_size, scene_size), var)
     chm = choicemap()
     for x in 1:scene_size
         for y in 1:scene_size
-            chm[(:pixels, step, x, y)] = choices[(:pixels, step, x, y)]
+            chm[(:pixels, step, x, y)] = clip(choices[(:pixels, step, x, y)], 0., 1.)
         end
     end
     
@@ -86,25 +92,51 @@ the update step will be unable to constrain the observation of (:pos, n>1, t) an
     end
 end;
 
+function mean(arr)
+    return sum(arr) / length(arr)
+end
 
 function particle_filter_rejuv_resim(trace, model, num_particles::Int, num_samples::Int)
     scene_size, steps, max_fireflies = get_args(trace)
-    init_obs = get_traced_variable_observation(trace, step=1)
+    init_obs = observe_at_time(trace, 1)
     state = Gen.initialize_particle_filter(model, (scene_size, 1, max_fireflies,), init_obs, num_particles)
 
     for t=2:steps
-        obs = get_traced_variable_observation(trace, step=t)
+        println()
+        println("t=$t")
+        obs = observe_at_time(trace, t)
 
         # apply a rejuvenation move to each particle
         for i=1:num_particles
-            initial_choices = select(:x0, :y0, :vx0, :vy0)
+            initial_choices = selectall()
             state.traces[i], _  = mh(state.traces[i], initial_choices)
         end
+        scores = []
+        for i=1:num_particles
+            push!(scores, get_score(state.traces[i]))
+        end
+        println("Scores: ", mean(scores))
 
         Gen.maybe_resample!(state, ess_threshold=num_particles/2)
-        
-        Gen.particle_filter_step!(state, (t,), (UnknownChange(),), obs)
+        Gen.particle_filter_step!(state, (scene_size, t, max_fireflies,), (NoChange(), UnknownChange(), NoChange(),), obs)
+        scores = []
+        for i=1:num_particles
+            push!(scores, get_score(state.traces[i]))
+        end
+        println("Scores: ", mean(scores))
+
+        # # visualize inference
+        # if t % 9 == 0
+        #     anim = visualize_inference(trace, state.traces, t; firefly_size=4)
+        #     mp4(anim, "animations/firefly_inference_t$t.mp4", fps=t)
+        # end
     end
+
+    scores = []
+    for i=1:num_particles
+        push!(scores, get_score(state.traces[i]))
+    end
+    println("Scores: ", mean(scores))
 
     # return a sample of unweighted traces from the weighted collection
     return Gen.sample_unweighted_traces(state, num_samples)
