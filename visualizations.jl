@@ -200,3 +200,21 @@ Rewrite more composable functions for plotting traces and observations:
     - overlay_ground_truth(trace, figure, step)
         --> Adds ground truth with different markers to a figure
 """
+function mat_to_img(mat)
+    return colorview(RGBA, clip.(mat, 0., 1.))
+end
+
+
+function animate(frames; fps=10)
+    n_frames, _, x_size, y_size = size(frames)
+    if frames isa Array
+        frames = [mat_to_img(frames[i, :, :, :]) for i in 1:n_frames]
+    end
+    
+    fig = plot()
+    anim = Plots.@animate for frame in frames
+        empty!(fig)
+        heatmap!(fig, frame, xlims=(0, x_size), ylims=(0, y_size), background_color=:black, axis=false, grid=false)
+    end
+    return anim
+end

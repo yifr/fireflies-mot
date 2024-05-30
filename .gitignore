@@ -1,2 +1,4 @@
 *.gif
+*.mp4
+.DS_Store
 animations/
