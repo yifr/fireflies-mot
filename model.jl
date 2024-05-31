@@ -25,16 +25,6 @@ model(max_fireflies, steps):
 
 """
 
-struct Firefly
-    x::Int              # Position of firefly
-    y::Int              # Position of firefly
-    color::Int          # Maps to RGB color (1: red, 2: green, 3: blue, and can be extended arbitrarily)
-    blink_rate::Float64 # frequency of blinking
-    blinking::Bool      # whether or not the firefly is currently blinking
-    x_sigma::Float64    # defines glow of firefly
-    y_sigma::Float64    # defines glow of firefly
-end
-
 
 @gen function initialize_fireflies(scene_size::Int64, max_fireflies::Int64, steps::Int64)
     """
@@ -50,6 +40,10 @@ end
     n_fireflies = {:n_fireflies} ~ uniform_discrete(1, max_fireflies)
     xs = zeros(Float64, n_fireflies, steps + 1)
     ys = zeros(Float64, n_fireflies, steps + 1)
+    sigma_x = 1
+    sigma_y = 2
+    motion_var_x = 1
+    motion_var_y = 1
     colors = zeros(Int, n_fireflies)
     blink_rates = zeros(Float64, n_fireflies)
     blinking_states = zeros(Int, n_fireflies, steps + 1)
@@ -61,12 +55,15 @@ end
         blink_rates[n] = blink_rate
     end
     
-    return (n_fireflies=n_fireflies, xs=xs, ys=ys, colors=colors, blink_rates=blink_rates, blinking_states=blinking_states)
+    return (n_fireflies=n_fireflies, xs=xs, ys=ys, colors=colors, blink_rates=blink_rates, blinking_states=blinking_states,
+            sigma_x=sigma_x, sigma_y=sigma_y, motion_var_x=motion_var_x, motion_var_y=motion_var_y)
 end
 
 @gen function update_states(states, step, scene_size)
     xs = states[:xs]
     ys = states[:ys]
+    motion_var_x = states[:motion_var_x]
+    motion_var_y = states[:motion_var_y]
     n_fireflies = states[:n_fireflies]
     blink_rates = states[:blink_rates]  
     blinking_states = states[:blinking_states]
@@ -79,8 +76,8 @@ end
             prev_y = ys[n, step-1]
         end
         blink_rate = blink_rates[n]
-        x = {:x => n => step} ~ normal(prev_x, 1)
-        y = {:y => n => step} ~ normal(prev_y, 1)
+        x = {:x => n => step} ~ normal(prev_x, motion_var_x)
+        y = {:y => n => step} ~ normal(prev_y, motion_var_y)
         blinking = {:blinking => n => step} ~ bernoulli(blink_rate)
         xs[n, step] = x
         ys[n, step] = y
@@ -123,7 +120,8 @@ function render(states, step::Int64, scene_size::Int64)
     colors = states[:colors]
     n_fireflies = states[:n_fireflies]
     blinking_states = states[:blinking_states]
-
+    sigma_x = states[:sigma_x]
+    sigma_y = states[:sigma_y]
     color_map = [(1., 0., 0.), (0., 1., 0.), (0., 0., 1.)]
     pixels = zeros(Float64, 4, scene_size, scene_size)
     for n in 1:n_fireflies
@@ -132,21 +130,18 @@ function render(states, step::Int64, scene_size::Int64)
         color = colors[n]
         blinking = blinking_states[n, step]
         if blinking == 1
-            println("[t=$step] Firefly blinking at x=$x, y=$y color=$color")
-            alphas = calculate_firefly_glow(x, y, 2, 4, scene_size)            
+            alphas = calculate_firefly_glow(x, y, sigma_x, sigma_y, scene_size)            
             r, g, b = color_map[color]
             pixels[1, :, :] .+= alphas .* r
             pixels[2, :, :] .+= alphas .* g
             pixels[3, :, :] .+= alphas .* b
             pixels[4, :, :] .+= alphas
-        else
-            println("[t=$step] Firefly not blinking at x=$x, y=$y")
         end
     end
-    img = clip.(pixels, 0., 1.)
-    img = colorview(RGBA, img)
-    display(heatmap(img, xlims=(0, scene_size), ylims=(0, scene_size), 
-        aspect_ratio=1,legend=false, background_color=:black))
+    # img = clip.(pixels, 0., 1.)
+    # img = colorview(RGBA, img)
+    # display(heatmap(img, xlims=(0, scene_size), ylims=(0, scene_size), 
+    #     aspect_ratio=1,legend=false, background_color=:black))
 
     return pixels
 end
@@ -191,11 +186,9 @@ const image_likelihood = ImageLikelihood()
     """
     Given some scene size, and max number of fireflies, run the model for a number of steps
     """
-    states = initialize_fireflies(scene_size, max_fireflies, steps)
+    states = {:init} ~ initialize_fireflies(scene_size, max_fireflies, steps)
     observations = zeros(Float64, steps, 4, scene_size, scene_size)
-    println(scene_size, max_fireflies, steps)
     for t in 1:steps
-        println("step=$t")
         states = {:states => t} ~ update_states(states, t, scene_size)
         rendered_state = render(states, t, scene_size)
         observation = {:observations => t} ~ image_likelihood(rendered_state, 0.01)

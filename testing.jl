@@ -21,5 +21,7 @@ include("./inference.jl")
 
 function test_model(scene_size, max_fireflies, steps; experiment_tag="")
     trace = simulate(model, (scene_size, max_fireflies, steps))
-    return trace;
+    inferred_traces = particle_filter_rejuv_resim(trace, model, 100, 10)
+
+    return trace, inferred_traces;
 end

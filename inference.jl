@@ -98,38 +98,49 @@ end
 
 function particle_filter_rejuv_resim(trace, model, num_particles::Int, num_samples::Int)
     scene_size, steps, max_fireflies = get_args(trace)
-    init_obs = observe_at_time(trace, 1)
-    state = Gen.initialize_particle_filter(model, (scene_size, 1, max_fireflies,), init_obs, num_particles)
+    obs = get_choices(trace)[:observations => 1]
+    chm = choicemap()
+    chm[:observations=>1] = obs
+    state = Gen.initialize_particle_filter(model, (scene_size, max_fireflies,1), chm, num_particles)
 
     for t=2:steps
         println()
         println("t=$t")
-        obs = observe_at_time(trace, t)
-
+        
         # apply a rejuvenation move to each particle
         for i=1:num_particles
-            initial_choices = selectall()
-            state.traces[i], _  = mh(state.traces[i], initial_choices)
-        end
+            # select variables to change: n_fireflies, colors, blink_rates, blinking_states
+            trace = state.traces[i]
+            n_fireflies = get_choices(trace)[:init=>:n_fireflies]
+            choices = select(:init => :n_fireflies)
+            for n in 1:n_fireflies
+                push!(choices, :init=>:color => n)
+                push!(choices, :init=>:blink_rate => n)
+                push!(choices, :blinking => n => t)
+                push!(choices, :states=>t=>:x => n => t)
+                push!(choices, :states=>t=>:y => n => t)
+            end
+            state.traces[i], _  = mh(state.traces[i], choices)
+        end 
+
         scores = []
         for i=1:num_particles
             push!(scores, get_score(state.traces[i]))
         end
         println("Scores: ", mean(scores))
+
+        obs = get_choices(trace)[:observation => t]
+        chm = choicemap()
+        chm[:observation => t] = obs
 
         Gen.maybe_resample!(state, ess_threshold=num_particles/2)
-        Gen.particle_filter_step!(state, (scene_size, t, max_fireflies,), (NoChange(), UnknownChange(), NoChange(),), obs)
+        Gen.particle_filter_step!(state, (scene_size, t, max_fireflies,), (NoChange(), UnknownChange(), NoChange(),), chm)
         scores = []
         for i=1:num_particles
             push!(scores, get_score(state.traces[i]))
         end
         println("Scores: ", mean(scores))
 
-        # # visualize inference
-        # if t % 9 == 0
-        #     anim = visualize_inference(trace, state.traces, t; firefly_size=4)
-        #     mp4(anim, "animations/firefly_inference_t$t.mp4", fps=t)
-        # end
     end
 
     scores = []
