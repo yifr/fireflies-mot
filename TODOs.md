@@ -10,3 +10,9 @@ P(x')  g(x | x')
 P(x)   g(x'| x)
 
 Proposal (forward kernel) -- generative function that outputs a choicemap whose choices are a subset of O_t
+
+
+6.3.24
+- Inference not working
+Debugging visualizations + model
+1. multi-pane visualization

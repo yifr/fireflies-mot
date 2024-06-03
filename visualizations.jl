@@ -1,5 +1,6 @@
 using Gen
 using Plots, Images
+include("./model.jl")
 
 function plot_multiple_fireflies(trace; plot_ground_truth=true, firefly_size=4)
     """
@@ -201,7 +202,7 @@ Rewrite more composable functions for plotting traces and observations:
         --> Adds ground truth with different markers to a figure
 """
 function mat_to_img(mat)
-    return colorview(RGBA, clip.(mat, 0., 1.))
+    return colorview(RGB, clip.(mat, 0., 1.))
 end
 
 
@@ -224,3 +225,69 @@ end
 #     choices = get_choices(trace)
 #     states, observations = get_retval(trace)
 #     n_fireflies = choices[:init => :n_fireflies]
+
+function visualize_particles(particles, gt_trace)
+    """
+    animate trajectories for each particle. If there are 10 particles,
+    and ground truth trace, animate 11 panes, with the first pane showing 
+    the ground truth trace, and the remaining panes showing the particles.
+
+    Ordering of the particles can be determined by the score of the particle.
+    """
+
+    scene_size, max_fireflies, steps = get_args(gt_trace)
+    current_steps = get_args(particles[1])[3]
+    gt_states, gt_observations = get_retval(gt_trace)
+    gt_n_fireflies = get_choices(gt_trace)[:init=>:n_fireflies]
+    num_particles = length(particles)
+
+    fig = plot(layout=grid(1, num_particles + 1), background_color=RGB(0, 0, 0), showaxis=true, ticks=false, aspect_ratio=:equal)
+    gr()
+    println("current steps: ", current_steps, ", gt steps: ", steps)
+    anim = @animate for t in 1:current_steps
+        empty!(fig[1])
+        xlims!(0, scene_size + 1)
+        ylims!(0, scene_size + 1)
+        # Plot ground truth states
+        for n in 1:gt_n_fireflies
+            x = gt_states[:xs][n, t]
+            y = gt_states[:ys][n, t]
+            color = gt_states[:colors][n]
+            blinking = gt_states[:blinking_states][n, t]
+            if blinking == 1
+                scatter!(fig[1], [x], [y], color=color, markersize=4, label=nothing, aspect_ratio=:equal)
+            else 
+                scatter!(fig[1], [x], [y], color=color, markersize=4, label=nothing, markershape=:x, aspect_ratio=:equal)
+            end
+            if t > 1
+                # Draw trajectory after first time step
+                plot!(fig[1], gt_states[:xs][n, 1:t], gt_states[:ys][n, 1:t], color=color, label=nothing, aspect_ratio=:equal)
+            end
+        end
+
+        # Get states for each particle and plot
+        states = [get_retval(particle)[1] for particle in particles]
+        for p in 1:num_particles
+            empty!(fig[p + 1])
+            xlims!(0, scene_size + 1)
+            ylims!(0, scene_size + 1)
+            n_fireflies = get_choices(particles[p])[:init=>:n_fireflies]
+
+            for n in 1:n_fireflies
+                x = states[p][:xs][n, t]
+                y = states[p][:ys][n, t]
+                color = states[p][:colors][n]
+                blinking = states[p][:blinking_states][n, t]
+                if blinking == 1
+                    scatter!(fig[p + 1], [x], [y], color=color, markersize=4, label=nothing, aspect_ratio=:equal)
+                else 
+                    scatter!(fig[p + 1], [x], [y], color=color, markersize=4, label=nothing, markershape=:x, aspect_ratio=:equal)
+                end
+                if t > 1
+                    plot!(fig[p + 1], states[p][:xs][n, 1:t], states[p][:ys][n, 1:t], color=color, label=nothing, aspect_ratio=:equal)
+                end
+            end
+        end
+    end
+    return anim
+end

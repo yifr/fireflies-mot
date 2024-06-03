@@ -38,19 +38,19 @@ model(max_fireflies, steps):
     - (blink_rate, n): frequency of blinking for firefly n
     """
     n_fireflies = {:n_fireflies} ~ uniform_discrete(1, max_fireflies)
-    xs = zeros(Float64, n_fireflies, steps + 1)
-    ys = zeros(Float64, n_fireflies, steps + 1)
-    sigma_x = 1
-    sigma_y = 2
-    motion_var_x = 1
-    motion_var_y = 1
+    xs = zeros(Float64, n_fireflies, steps)
+    ys = zeros(Float64, n_fireflies, steps)
+    sigma_x = 3.
+    sigma_y = 6.
+    motion_var_x = 3.
+    motion_var_y = 3.
     colors = zeros(Int, n_fireflies)
     blink_rates = zeros(Float64, n_fireflies)
-    blinking_states = zeros(Int, n_fireflies, steps + 1)
+    blinking_states = zeros(Int, n_fireflies, steps)
     t = 1
     for n in 1:n_fireflies
         color = {:color => n} ~ uniform_discrete(1, 3)
-        blink_rate = {:blink_rate => n} ~ uniform(0.1, 0.5)
+        blink_rate = {:blink_rate => n} ~ uniform(0.99, 0.999)
         colors[n] = color
         blink_rates[n] = blink_rate
     end
@@ -71,15 +71,17 @@ end
     blinking_states = states[:blinking_states]
     for n in 1:n_fireflies
         if step == 1
-            prev_x = uniform_discrete(1, scene_size - 1)
-            prev_y = uniform_discrete(1, scene_size - 1)
+            init_x = {:init_x => n} ~ uniform_discrete(1, scene_size - 1)
+            init_y = {:init_y => n} ~ uniform_discrete(1, scene_size - 1)
+            prev_x = Float64(init_x)
+            prev_y = Float64(init_y)
         else
             prev_x = xs[n, step-1]
             prev_y = ys[n, step-1]
         end
         blink_rate = blink_rates[n]
-        x = {:x => n} ~ normal(prev_x, motion_var_x)
-        y = {:y => n} ~ normal(prev_y, motion_var_y)
+        x = {:x => n} ~ trunc_norm(prev_x, motion_var_x, 1., Float64(scene_size))
+        y = {:y => n} ~ trunc_norm(prev_y, motion_var_y, 1., Float64(scene_size))
         blinking = {:blinking => n} ~ bernoulli(blink_rate)
         xs[n, step] = x
         ys[n, step] = y
@@ -109,7 +111,7 @@ function mat_to_img(mat)
     """
     Convert matrix to image
     """
-    img = colorview(RGBA, clip.(mat, 0., 1.))
+    img = colorview(RGB, clip.(mat, 0., 1.))
     return img
 end
 
@@ -125,26 +127,25 @@ function render(states, step::Int64, scene_size::Int64)
     sigma_x = states[:sigma_x]
     sigma_y = states[:sigma_y]
     color_map = [(1., 0., 0.), (0., 1., 0.), (0., 0., 1.)]
-    pixels = zeros(Float64, 4, scene_size, scene_size)
+    pixels = zeros(Float64, 3, scene_size, scene_size)
     for n in 1:n_fireflies
         x = xs[n, step]
         y = ys[n, step]
         color = colors[n]
         blinking = blinking_states[n, step]
         if blinking == 1
-            alphas = calculate_firefly_glow(x, y, sigma_x, sigma_y, scene_size)            
+            glow_vals = calculate_firefly_glow(x, y, sigma_x, sigma_y, scene_size)            
             r, g, b = color_map[color]
-            pixels[1, :, :] .+= alphas .* r
-            pixels[2, :, :] .+= alphas .* g
-            pixels[3, :, :] .+= alphas .* b
-            pixels[4, :, :] .+= alphas
+            pixels[1, :, :] .+= glow_vals .* r
+            pixels[2, :, :] .+= glow_vals .* g
+            pixels[3, :, :] .+= glow_vals .* b
         end
     end
     # img = clip.(pixels, 0., 1.)
     # img = colorview(RGBA, img)
     # display(heatmap(img, xlims=(0, scene_size), ylims=(0, scene_size), 
     #     aspect_ratio=1,legend=false, background_color=:black))
-
+    pixels = clip.(pixels, 0., 1.)
     return pixels
 end
 
@@ -189,7 +190,7 @@ const image_likelihood = ImageLikelihood()
     Given some scene size, and max number of fireflies, run the model for a number of steps
     """
     states = {:init} ~ initialize_fireflies(scene_size, max_fireflies, steps)
-    observations = zeros(Float64, steps, 4, scene_size, scene_size)
+    observations = zeros(Float64, steps, 3, scene_size, scene_size)
     for t in 1:steps
         states = {:states => t} ~ update_states(states, t, scene_size)
         rendered_state = render(states, t, scene_size)
@@ -198,3 +199,5 @@ const image_likelihood = ImageLikelihood()
     end
     return states, observations
 end
+
+

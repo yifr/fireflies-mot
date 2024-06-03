@@ -145,6 +145,14 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
 
     mh_accepted = []
     for t=2:steps
+        if record_json
+            particles = [state.traces[i] for i in 1:num_particles]
+            anim = visualize_particles(particles, trace)
+            save_path = joinpath(savedir, "videos", "t$t-particles.mp4")
+            mkpath(dirname(save_path))
+            mp4(anim, save_path, fps=5)
+        end
+
         # write out observation and save filepath name
         # record all the particle traces at time t - 1
         println()
@@ -158,11 +166,11 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
             n_fireflies = get_choices(particle)[:init=>:n_fireflies]
             choices = select(:init => :n_fireflies)
             for n in 1:n_fireflies
-                push!(choices, :init=> :color => n)
-                push!(choices, :init=> :blink_rate => n)
+                push!(choices, :init => :color => n)
+                push!(choices, :init => :blink_rate => n)
                 push!(choices, :states => t => :blinking => n)
-                push!(choices, :states=> t => :x => n)
-                push!(choices, :states=> t => :y => n)
+                push!(choices, :states => t => :x => n)
+                push!(choices, :states => t => :y => n)
             end
             state.traces[i], accepted  = mh(state.traces[i], choices)
             num_accepted += accepted
