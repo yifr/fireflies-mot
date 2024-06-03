@@ -1,6 +1,6 @@
 using Gen
 using JSON
-
+include("./mcmc.jl")
 include("./visualizations.jl")
 include("./utilities.jl")
 
@@ -158,36 +158,13 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
         # record all the particle traces at time t - 1
         println()
         println("t=$t")
-        
-        # apply a rejuvenation move to each particle
-        num_accepted = 0
-        for i=1:num_particles
-            # select variables to change: n_fireflies, colors, blink_rates, blinking_states
-            particle = state.traces[i]
-            n_fireflies = get_choices(particle)[:init=>:n_fireflies]
-            choices = select(:init => :n_fireflies)
-            for n in 1:n_fireflies
-                push!(choices, :init => :color => n)
-                push!(choices, :init => :blink_rate => n)
-                push!(choices, :init => :init_x => n)
-                push!(choices, :init => :init_y => n)
-                for prev_t in 1:t-1
-                    push!(choices, :states => prev_t => :blinking => n)
-                    push!(choices, :states => prev_t => :x => n)
-                    push!(choices, :states => prev_t => :y => n)
-                end
-                
-            end
-            for _ in 1:20
-                state.traces[i], accepted = mh(state.traces[i], selectall())
-                num_accepted += accepted
-            end
-        end 
-
-        push!(mh_accepted, num_accepted / num_particles)
+    
         obs = get_choices(trace)[:observations => t]
         chm = choicemap()
         chm[:observations => t] = obs
+        
+        mcmc_moves(state, t)
+        #mcmc_prior_rejuvenation(state, 20)
 
         Gen.maybe_resample!(state, ess_threshold=num_particles/2)
         Gen.particle_filter_step!(state, (scene_size, max_fireflies, t,), (NoChange(), UnknownChange(), NoChange(),), chm)
