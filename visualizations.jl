@@ -205,7 +205,7 @@ function mat_to_img(mat)
 end
 
 
-function animate(frames; fps=10)
+function animate_observations(frames; fps=10)
     n_frames, _, x_size, y_size = size(frames)
     if frames isa Array
         frames = [mat_to_img(frames[i, :, :, :]) for i in 1:n_frames]
@@ -218,3 +218,9 @@ function animate(frames; fps=10)
     end
     return anim
 end
+
+# function visualize_states(trace)
+#     scene_size, max_fireflies, steps = get_args(trace)
+#     choices = get_choices(trace)
+#     states, observations = get_retval(trace)
+#     n_fireflies = choices[:init => :n_fireflies]

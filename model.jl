@@ -55,8 +55,10 @@ model(max_fireflies, steps):
         blink_rates[n] = blink_rate
     end
     
-    return (n_fireflies=n_fireflies, xs=xs, ys=ys, colors=colors, blink_rates=blink_rates, blinking_states=blinking_states,
-            sigma_x=sigma_x, sigma_y=sigma_y, motion_var_x=motion_var_x, motion_var_y=motion_var_y)
+    return (n_fireflies=n_fireflies, xs=xs, ys=ys, colors=colors, 
+            blink_rates=blink_rates, blinking_states=blinking_states,
+            sigma_x=sigma_x, sigma_y=sigma_y, 
+            motion_var_x=motion_var_x, motion_var_y=motion_var_y)
 end
 
 @gen function update_states(states, step, scene_size)
@@ -76,9 +78,9 @@ end
             prev_y = ys[n, step-1]
         end
         blink_rate = blink_rates[n]
-        x = {:x => n => step} ~ normal(prev_x, motion_var_x)
-        y = {:y => n => step} ~ normal(prev_y, motion_var_y)
-        blinking = {:blinking => n => step} ~ bernoulli(blink_rate)
+        x = {:x => n} ~ normal(prev_x, motion_var_x)
+        y = {:y => n} ~ normal(prev_y, motion_var_y)
+        blinking = {:blinking => n} ~ bernoulli(blink_rate)
         xs[n, step] = x
         ys[n, step] = y
         blinking_states[n, step] = blinking

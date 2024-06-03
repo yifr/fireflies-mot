@@ -1,5 +1,8 @@
 using Gen
+using JSON
+
 include("./visualizations.jl")
+include("./utilities.jl")
 
 function get_traced_variable_observation(trace; step)
     args = get_args(trace)
@@ -96,59 +99,97 @@ function mean(arr)
     return sum(arr) / length(arr)
 end
 
-function particle_filter_rejuv_resim(trace, model, num_particles::Int, num_samples::Int)
-    scene_size, steps, max_fireflies = get_args(trace)
+function make_record(particle, savedir, t, i)
+    record = Dict()
+    particle_state, _ = get_retval(particle)
+    scene_size, _, _ = get_args(particle)
+    rendered_img = mat_to_img(render(particle_state, t, scene_size))
+    record["state"] = particle_state
+    record["score"] = get_score(particle)
+
+    # save rendered_img to file
+    save_path = joinpath(savedir, "images", "t$t-particle$i.png")
+    mkpath(dirname(save_path))
+    
+    record["rendered_img"] = save_path
+    save(save_path, rendered_img)
+    return record
+end
+
+function smc(trace, model, num_particles::Int, num_samples::Int; record_json=true, experiment_tag="")
+    scene_size, max_fireflies, steps = get_args(trace)
+
     obs = get_choices(trace)[:observations => 1]
     chm = choicemap()
     chm[:observations=>1] = obs
+    
     state = Gen.initialize_particle_filter(model, (scene_size, max_fireflies,1), chm, num_particles)
+    if record_json
+        savedir = timestamp_dir(experiment_tag=experiment_tag)
+        res_json = Dict(
+            "num_particles" => num_particles,
+            "num_samples" => num_samples,
+            "experiment_tag" => experiment_tag,
+            "scene_size" => scene_size,
+            "max_fireflies" => max_fireflies,
+            "steps" => steps,
+            "smc_steps" => [[Dict() for _ in 1:num_particles] for _ in 1:steps]
+        )
+        for i=1:num_particles
+            t = 1
+            particle = state.traces[i]
+            record = make_record(particle, savedir, t, i)
+            res_json["smc_steps"][t][i] = record
+        end
+    end
 
+    mh_accepted = []
     for t=2:steps
+        # write out observation and save filepath name
+        # record all the particle traces at time t - 1
         println()
         println("t=$t")
         
         # apply a rejuvenation move to each particle
+        num_accepted = 0
         for i=1:num_particles
             # select variables to change: n_fireflies, colors, blink_rates, blinking_states
-            trace = state.traces[i]
-            n_fireflies = get_choices(trace)[:init=>:n_fireflies]
+            particle = state.traces[i]
+            n_fireflies = get_choices(particle)[:init=>:n_fireflies]
             choices = select(:init => :n_fireflies)
             for n in 1:n_fireflies
-                push!(choices, :init=>:color => n)
-                push!(choices, :init=>:blink_rate => n)
-                push!(choices, :blinking => n => t)
-                push!(choices, :states=>t=>:x => n => t)
-                push!(choices, :states=>t=>:y => n => t)
+                push!(choices, :init=> :color => n)
+                push!(choices, :init=> :blink_rate => n)
+                push!(choices, :states => t => :blinking => n)
+                push!(choices, :states=> t => :x => n)
+                push!(choices, :states=> t => :y => n)
             end
-            state.traces[i], _  = mh(state.traces[i], choices)
+            state.traces[i], accepted  = mh(state.traces[i], choices)
+            num_accepted += accepted
         end 
-
-        scores = []
-        for i=1:num_particles
-            push!(scores, get_score(state.traces[i]))
-        end
-        println("Scores: ", mean(scores))
-
-        obs = get_choices(trace)[:observation => t]
+        push!(mh_accepted, num_accepted / num_particles)
+        obs = get_choices(trace)[:observations => t]
         chm = choicemap()
-        chm[:observation => t] = obs
+        chm[:observations => t] = obs
 
         Gen.maybe_resample!(state, ess_threshold=num_particles/2)
-        Gen.particle_filter_step!(state, (scene_size, t, max_fireflies,), (NoChange(), UnknownChange(), NoChange(),), chm)
-        scores = []
-        for i=1:num_particles
-            push!(scores, get_score(state.traces[i]))
+        Gen.particle_filter_step!(state, (scene_size, max_fireflies, t,), (NoChange(), UnknownChange(), NoChange(),), chm)
+        if record_json
+            for i=1:num_particles
+                particle = state.traces[i]
+                res_json["smc_steps"][t-1][i] = make_record(particle, savedir, t-1, i)
+            end
         end
-        println("Scores: ", mean(scores))
-
     end
 
-    scores = []
-    for i=1:num_particles
-        push!(scores, get_score(state.traces[i]))
+    if record_json
+        save_path = joinpath(savedir, "results.json")
+        open(save_path, "w") do f
+            JSON.print(f, res_json)
+        end
     end
-    println("Scores: ", mean(scores))
 
+    display(plot([mh_accepted], title="MH Acceptance Rate", xlabel="Step", ylabel="Acceptance Rate"))
     # return a sample of unweighted traces from the weighted collection
     return Gen.sample_unweighted_traces(state, num_samples)
 end;
