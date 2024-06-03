@@ -14,55 +14,49 @@ function mcmc_moves(particles, t)
         choices = get_choices(particle)
 
         # Vary number of fireflies
-        @assert has_value(choices, :init => :n_fireflies)
         n_fireflies = get_choices(particle)[:init=>:n_fireflies]
         run_mh(particles, i, select(:init => :n_fireflies), 3)
 
         # vary color 
-        selection = select()
         for n in 1:n_fireflies
-            @assert has_value(choices, :init => :color => n)
+            selection = select()
             push!(selection, :init => :color => n)
+            run_mh(particles, i, selection, 3)
+
         end
-        run_mh(particles, i, selection, 3)
         
         # Vary blink rate
-        selection = select()
         for n in 1:n_fireflies
-            @assert has_value(choices, :init => :blink_rate => n)
+            selection = select()
             push!(selection, :init => :blink_rate => n)
+            run_mh(particles, i, selection, 2)
+
         end
-        run_mh(particles, i, selection, 2)
 
         # Vary starting position
-        selection = select()
         for n in 1:n_fireflies
-            @assert has_value(choices, :init => :init_x => n)
+            selection = select()
+            
+        end
+        
+        # Vary locations
+        for n in 1:n_fireflies
+            selection = select()
             push!(selection, :init => :init_x => n)
             push!(selection, :init => :init_y => n)
-        end
-        run_mh(particles, i, selection, 10)
-
-        # Vary locations
-        selection = select()
-        for n in 1:n_fireflies
             for prev_t in 1:t - 1
-                @assert has_value(choices, :states => prev_t => :x => n)
                 push!(selection, :states => prev_t => :x => n)
                 push!(selection, :states => prev_t => :y => n)
             end
+            run_mh(particles, i, selection, 10)
         end
-        run_mh(particles, i, selection, 10)
 
         # Vary blinking states
-        selection = select()
         for n in 1:n_fireflies
             for prev_t in 1:t - 1
-                @assert has_value(choices, :states => prev_t => :blinking => n)
-                push!(selection, :states => prev_t => :blinking => n)
+                run_mh(particles, i, select(:states => prev_t => :blinking => n), 2)
             end
         end
-        run_mh(particles, i, selection, 20)
     end 
 end
 
