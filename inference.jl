@@ -122,7 +122,7 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
     obs = get_choices(trace)[:observations => 1]
     chm = choicemap()
     chm[:observations=>1] = obs
-    
+    gt_state, _ = get_retval(trace)
     state = Gen.initialize_particle_filter(model, (scene_size, max_fireflies,1), chm, num_particles)
     if record_json
         savedir = timestamp_dir(experiment_tag=experiment_tag)
@@ -133,6 +133,7 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
             "scene_size" => scene_size,
             "max_fireflies" => max_fireflies,
             "steps" => steps,
+            "gt_state" => gt_state,
             "smc_steps" => [[Dict() for _ in 1:num_particles] for _ in 1:steps]
         )
         for i=1:num_particles
@@ -145,13 +146,13 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
 
     mh_accepted = []
     for t=2:steps
-        if record_json
-            particles = [state.traces[i] for i in 1:num_particles]
-            anim = visualize_particles(particles, trace)
-            save_path = joinpath(savedir, "videos", "t$t-particles.mp4")
-            mkpath(dirname(save_path))
-            mp4(anim, save_path, fps=5)
-        end
+        # if record_json
+        #     particles = [state.traces[i] for i in 1:num_particles]
+        #     anim = visualize_particles(particles, trace)
+        #     save_path = joinpath(savedir, "videos", "t$t-particles.mp4")
+        #     mkpath(dirname(save_path))
+        #     mp4(anim, save_path, fps=5)
+        # end
 
         # write out observation and save filepath name
         # record all the particle traces at time t - 1
@@ -168,13 +169,21 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
             for n in 1:n_fireflies
                 push!(choices, :init => :color => n)
                 push!(choices, :init => :blink_rate => n)
-                push!(choices, :states => t => :blinking => n)
-                push!(choices, :states => t => :x => n)
-                push!(choices, :states => t => :y => n)
+                push!(choices, :init => :init_x => n)
+                push!(choices, :init => :init_y => n)
+                for prev_t in 1:t-1
+                    push!(choices, :states => prev_t => :blinking => n)
+                    push!(choices, :states => prev_t => :x => n)
+                    push!(choices, :states => prev_t => :y => n)
+                end
+                
             end
-            state.traces[i], accepted  = mh(state.traces[i], choices)
-            num_accepted += accepted
+            for _ in 1:20
+                state.traces[i], accepted = mh(state.traces[i], selectall())
+                num_accepted += accepted
+            end
         end 
+
         push!(mh_accepted, num_accepted / num_particles)
         obs = get_choices(trace)[:observations => t]
         chm = choicemap()
@@ -185,19 +194,20 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
         if record_json
             for i=1:num_particles
                 particle = state.traces[i]
-                res_json["smc_steps"][t-1][i] = make_record(particle, savedir, t-1, i)
+                res_json["smc_steps"][t][i] = make_record(particle, savedir, t-1, i)
             end
         end
     end
 
     if record_json
         save_path = joinpath(savedir, "results.json")
+        println("http://localhost:8080/viz/viz.html?path=../$save_path")
         open(save_path, "w") do f
             JSON.print(f, res_json)
         end
     end
 
-    display(plot([mh_accepted], title="MH Acceptance Rate", xlabel="Step", ylabel="Acceptance Rate"))
+    # display(plot([mh_accepted], title="MH Acceptance Rate", xlabel="Step", ylabel="Acceptance Rate"))
     # return a sample of unweighted traces from the weighted collection
     return Gen.sample_unweighted_traces(state, num_samples)
 end;

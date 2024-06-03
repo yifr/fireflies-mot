@@ -50,9 +50,13 @@ model(max_fireflies, steps):
     t = 1
     for n in 1:n_fireflies
         color = {:color => n} ~ uniform_discrete(1, 3)
-        blink_rate = {:blink_rate => n} ~ uniform(0.99, 0.999)
+        blink_rate = {:blink_rate => n} ~ uniform(0.1, 0.25)
         colors[n] = color
         blink_rates[n] = blink_rate
+        init_x = {:init_x => n} ~ uniform_discrete(1, scene_size - 1)
+        init_y = {:init_y => n} ~ uniform_discrete(1, scene_size - 1)
+        xs[n, t] = Float64(init_x)
+        ys[n, t] = Float64(init_y)
     end
     
     return (n_fireflies=n_fireflies, xs=xs, ys=ys, colors=colors, 
@@ -71,10 +75,8 @@ end
     blinking_states = states[:blinking_states]
     for n in 1:n_fireflies
         if step == 1
-            init_x = {:init_x => n} ~ uniform_discrete(1, scene_size - 1)
-            init_y = {:init_y => n} ~ uniform_discrete(1, scene_size - 1)
-            prev_x = Float64(init_x)
-            prev_y = Float64(init_y)
+            prev_x = xs[n, step]
+            prev_y = ys[n, step]
         else
             prev_x = xs[n, step-1]
             prev_y = ys[n, step-1]
@@ -126,7 +128,7 @@ function render(states, step::Int64, scene_size::Int64)
     blinking_states = states[:blinking_states]
     sigma_x = states[:sigma_x]
     sigma_y = states[:sigma_y]
-    color_map = [(1., 0., 0.), (0., 1., 0.), (0., 0., 1.)]
+    color_map = [(1., 0.2, 0.2), (0.2, 1., 0.2), (0.2, 0.2, 1.)]
     pixels = zeros(Float64, 3, scene_size, scene_size)
     for n in 1:n_fireflies
         x = xs[n, step]
