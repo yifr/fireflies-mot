@@ -46,7 +46,8 @@
             <li>Space: Play/Pause</li>
             <li>Right Arrow: Next Frame</li>
             <li>Left Arrow: Previous Frame</li>
-            <li>S: Syncronize Time Across Steps<span id="synced"><b> (Off)</b></span> </li>
+            <li>S: Syncronize Time Across Steps <span id="synced"><b>(Off)</b></span> </li>
+            <li>T: Display Trajectories <span id="show_trajectories"><b>(Off)</b></span></li>
         </ul>
     </div>
 </body>
@@ -73,6 +74,7 @@
     const frame_background = d3.select('#frame-background')
     const frame_foreground = d3.select('#frame-foreground')
     let synced = false;
+    let display_trajectories = false;
 
     const zoom_control = d3.zoom().on('zoom', function (e) {
         frame_foreground.attr('transform', e.transform);
@@ -92,7 +94,7 @@
         .attr("width", SVG_WIDTH)
         .attr("height", SVG_HEIGHT)
 
-    function plot_firefly(x, y, rx, ry, color, blinking, parent) {        
+    function firefly_glow(x, y, rx, ry, color, blinking, parent) {        
         parent.append("ellipse")
             .attr("cx", x)
             .attr("cy", y)
@@ -117,13 +119,36 @@
             .attr("stroke-width", 0.5)
     }
 
+    function plot_firefly(state, t, i, g) {
+        const x = state.xs[t][i]
+        const y = state.ys[t][i]
+        const rx = state.sigma_x
+        const ry = state.sigma_y
+        const color = state.colors[i]
+        const blinking = state.blinking_states[t][i]
+        firefly_glow(x, y, rx, ry, color, blinking, g)
+        if ((t > 0) && (display_trajectories)) {
+            const path = d3.path()
+            for (var j = 0; j < t; j++) {
+                path.moveTo(state.xs[j][i], state.ys[j][i])
+                path.lineTo(state.xs[j + 1][i], state.ys[j + 1][i])
+            }
+            g.append("path")
+            .attr("d", path)
+            .attr("fill", "none")
+            .attr("stroke", firefly_colormap[color - 1]) // - 1 because colors are 1-indexed
+            .attr("stroke-width", 0.5)
+        }
+    }
+
     function plot_state(state, score, t, frame_x, frame_y, parent, scene_size, title, frame_size) {
         const g = parent.append("g").attr("transform", `translate(${frame_x},${frame_y}) scale(${frame_size / scene_size})`)
         const _title = g.append("text").text(`${title} (t=${t})`).attr("x", scene_size / 2).attr("y", -30).style("text-anchor", "middle")
         _title.append("tspan").text(`(score = ${score.toPrecision(2)})`).attr("x", scene_size / 2).attr("dy", "1.2em").style("text-anchor", "middle")
         const plot = g.append("rect").attr("width", scene_size).attr("height", scene_size).attr("fill", "black")
         for (var i = 0; i < state.n_fireflies; i++) {
-            plot_firefly(state.xs[t][i], state.ys[t][i], state.sigma_x, state.sigma_y, state.colors[i], state.blinking_states[t][i], g)
+            // plot_firefly(state.xs[t][i], state.ys[t][i], state.sigma_x, state.sigma_y, state.colors[i], state.blinking_states[t][i], g)
+            plot_firefly(state, t, i, g)
         }
         return g
     }
@@ -142,7 +167,7 @@
             for (var i = 1; i < data.num_particles + 1; i++) {
                 frames[k][i].remove()
                 let x_offset = 150 + 500 * (i + 1)
-                let particle = data.smc_steps[k][i - 1];
+                let particle = data.smc_steps[i - 1][k];
                 frames[k][i] = plot_state(particle.state, particle.score,
                     t, x_offset, y_offset,
                     frame_foreground, data.scene_size,
@@ -190,8 +215,12 @@
                 frames = update_frames(frames, data, global_t)
             } else if (event.code === 'KeyS') {
                 synced = !synced
-                document.getElementById('synced').innerHTML = ` <b>(${synced ? 'On' : 'Off'})</b>`
+                document.getElementById('synced').innerHTML = `<b>(${synced ? 'On' : 'Off'})</b>`
                 global_t = 0;
+                frames = update_frames(frames, data, global_t);
+            } else if (event.code === 'KeyT') {
+                display_trajectories = !display_trajectories
+                document.getElementById('show_trajectories').innerHTML = `<b>(${display_trajectories ? 'On' : 'Off'})</b>`
                 frames = update_frames(frames, data, global_t);
             }
         });
