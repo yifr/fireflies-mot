@@ -163,8 +163,10 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
         chm = choicemap()
         chm[:observations => t] = obs
         
-        mcmc_moves(state, t)
-        #mcmc_prior_rejuvenation(state, 20)
+        for _ in 1:2
+            mcmc_moves(state, t)
+        end
+        #mcmc_prior_rejuvenation(state, 100)
 
         Gen.maybe_resample!(state, ess_threshold=num_particles/2)
         Gen.particle_filter_step!(state, (scene_size, max_fireflies, t,), (NoChange(), UnknownChange(), NoChange(),), chm)

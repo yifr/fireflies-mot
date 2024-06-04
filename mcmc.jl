@@ -32,12 +32,6 @@ function mcmc_moves(particles, t)
             run_mh(particles, i, selection, 2)
 
         end
-
-        # Vary starting position
-        for n in 1:n_fireflies
-            selection = select()
-            
-        end
         
         # Vary locations
         for n in 1:n_fireflies
