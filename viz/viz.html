@@ -20,7 +20,7 @@
 
 
 <body>
-    <input type="text" id="load-path" value="../out/results/test/2024-06-03/14-48-30/results.json"
+    <input type="text" id="load-path" value="../out/results/test/2024-06-10/17-18-11/results.json"
         style="width: 300px;">
     <button onclick="load_by_path()">Load</button>
 
@@ -147,7 +147,6 @@
         _title.append("tspan").text(`(score = ${score.toPrecision(2)})`).attr("x", scene_size / 2).attr("dy", "1.2em").style("text-anchor", "middle")
         const plot = g.append("rect").attr("width", scene_size).attr("height", scene_size).attr("fill", "black")
         for (var i = 0; i < state.n_fireflies; i++) {
-            // plot_firefly(state.xs[t][i], state.ys[t][i], state.sigma_x, state.sigma_y, state.colors[i], state.blinking_states[t][i], g)
             plot_firefly(state, t, i, g)
         }
         return g
@@ -164,10 +163,11 @@
             // Add text to indicate k-th SMC step to GT frame
             let smc_step = frames[k][0].append("text").text(`SMC Step ${k + 1}`).attr("x", -10).attr("y", 30).style("text-anchor", "end")
 
-            for (var i = 1; i < data.num_particles + 1; i++) {
+            for (var i = 1; i < data.num_samples + 1; i++) {
                 frames[k][i].remove()
                 let x_offset = 150 + 300 * (i + 1)
                 let particle = data.smc_steps[k][i - 1];
+                console.log(particle)
                 frames[k][i] = plot_state(particle.state, particle.score,
                     t, x_offset, y_offset,
                     frame_foreground, data.scene_size,
@@ -183,7 +183,7 @@
         let frames = []
         for (var t = 0; t < data.steps; t++) {
             frames.push([]);
-            for (var i = 0; i < data.num_particles + 1; i++) {
+            for (var i = 0; i < data.num_samples + 1; i++) {
                 frames[t].push(d3.select())
             }
         }
