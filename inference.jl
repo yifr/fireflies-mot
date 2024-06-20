@@ -46,9 +46,10 @@ function get_traced_variable_observation(trace; step)
     return chm
 end
 
-function clip(num, low, hi)
+function clamp(num, low, hi)
     return max(low, min(num, hi))
 end
+
 
 function observe_at_time(trace, step)
     args = get_args(trace)
@@ -60,7 +61,7 @@ function observe_at_time(trace, step)
     chm = choicemap()
     for x in 1:scene_size
         for y in 1:scene_size
-            chm[(:pixels, step, x, y)] = clip(choices[(:pixels, step, x, y)], 0., 1.)
+            chm[(:pixels, step, x, y)] = clamp(choices[(:pixels, step, x, y)], 0., 1.)
         end
     end
     
@@ -106,7 +107,6 @@ function make_record(particle, savedir, t, i)
     rendered_img = mat_to_img(render(particle_state, t, scene_size))
     record["state"] = particle_state
     record["score"] = get_score(particle)
-
     # save rendered_img to file
     save_path = joinpath(savedir, "images", "t$t-particle$i.png")
     mkpath(dirname(save_path))
@@ -118,11 +118,12 @@ end
 
 function smc(trace, model, num_particles::Int, num_samples::Int; record_json=true, experiment_tag="")
     scene_size, max_fireflies, steps = get_args(trace)
+    gt_state, observations = get_retval(trace)
 
     obs = get_choices(trace)[:observations => 1]
     chm = choicemap()
-    chm[:observations=>1] = obs
-    gt_state, _ = get_retval(trace)
+    chm[:observations=>1] = observations[1, :, :, :]
+
     state = Gen.initialize_particle_filter(model, (scene_size, max_fireflies,1), chm, num_particles)
     if record_json
         savedir = timestamp_dir(experiment_tag=experiment_tag)
@@ -136,24 +137,17 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
             "gt_state" => gt_state,
             "smc_steps" => [[Dict() for _ in 1:num_particles] for _ in 1:steps]
         )
-        for i=1:num_particles
+
+        particles = sample_unweighted_traces(state, 10)
+        for i=1:10
             t = 1
-            particle = state.traces[i]
-            record = make_record(particle, savedir, t, i)
-            res_json["smc_steps"][t][i] = record
+            particle = particles[i]
+            res_json["smc_steps"][t][i] = make_record(particle, savedir, t, i)
         end
     end
 
     mh_accepted = []
     for t=2:steps
-        # if record_json
-        #     particles = [state.traces[i] for i in 1:num_particles]
-        #     anim = visualize_particles(particles, trace)
-        #     save_path = joinpath(savedir, "videos", "t$t-particles.mp4")
-        #     mkpath(dirname(save_path))
-        #     mp4(anim, save_path, fps=5)
-        # end
-
         # write out observation and save filepath name
         # record all the particle traces at time t - 1
         println()
@@ -161,19 +155,23 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
     
         obs = get_choices(trace)[:observations => t]
         chm = choicemap()
-        chm[:observations => t] = obs
+        chm[:observations => t] = observations[t, :, :, :]
         
-        for _ in 1:2
-            mcmc_moves(state, t)
-        end
-        #mcmc_prior_rejuvenation(state, 100)
+        # for _ in 1:2
+        #     mcmc_moves(state, t, obs)
+        # end
+        #mcmc_prior_rejuvenation(state, 1000)
 
         Gen.maybe_resample!(state, ess_threshold=num_particles/2)
         Gen.particle_filter_step!(state, (scene_size, max_fireflies, t,), (NoChange(), UnknownChange(), NoChange(),), chm)
+
+        mcmc(state, observations[t, :, :, :], t, 10)
+        #mcmc_moves(state, t, obs)
         if record_json
-            for i=1:num_particles
-                particle = state.traces[i]
-                res_json["smc_steps"][t][i] = make_record(particle, savedir, t-1, i)
+            particles = sample_unweighted_traces(state, 10)
+            for i=1:10
+                particle = particles[i]
+                res_json["smc_steps"][t][i] = make_record(particle, savedir, t - 1, i)
             end
         end
     end
@@ -190,3 +188,4 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
     # return a sample of unweighted traces from the weighted collection
     return Gen.sample_unweighted_traces(state, num_samples)
 end;
+
