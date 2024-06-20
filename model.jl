@@ -3,6 +3,7 @@ using Images
 using Distributions
 using Plots
 include("./distribution_utils.jl")
+include("./utilities.jl")
 
 """
 Firefly model:
@@ -41,7 +42,7 @@ model(max_fireflies, steps):
     xs = zeros(Float64, n_fireflies, steps)
     ys = zeros(Float64, n_fireflies, steps)
     sigma_x = 3.
-    sigma_y = 6.
+    sigma_y = 5.
     motion_var_x = 3.
     motion_var_y = 3.
     colors = zeros(Int, n_fireflies)
@@ -197,7 +198,7 @@ const image_likelihood = ImageLikelihood()
         states = {:states => t} ~ update_states(states, t, scene_size)
         rendered_state = render(states, t, scene_size)
         observation = {:observations => t} ~ image_likelihood(rendered_state, 0.01)
-        observations[t, :, :, :] = observation
+        observations[t, :, :, :] = rendered_state
     end
     return states, observations
 end
