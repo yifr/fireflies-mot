@@ -21,7 +21,7 @@ include("./inference.jl")
 
 function test_model(scene_size, max_fireflies, steps; experiment_tag="")
     trace = simulate(model, (scene_size, max_fireflies, steps))
-    inferred_traces = smc(trace, model, 10, 10; record_json=true, experiment_tag=experiment_tag)
+    inferred_traces = smc(trace, model, 50, 10; record_json=true, experiment_tag=experiment_tag)
 
     return trace, inferred_traces;
 end
