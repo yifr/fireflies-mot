@@ -9,13 +9,6 @@ function get_traced_variable_observation(trace; step)
     choices = get_choices(trace)
     n_fireflies = choices[:n_fireflies]
 
-    # if end_step == -1
-    #     total_steps = args[2]
-    #     steps = 1:total_steps
-    # else
-    #     steps = 1:end_step
-    # end
-
     observations = []
     chm = Gen.choicemap()
 
@@ -100,7 +93,7 @@ function mean(arr)
     return sum(arr) / length(arr)
 end
 
-function make_record(particle, savedir, t, i)
+function make_record(particle::Gen.DynamicDSLTrace, savedir::String, t::Int64, i::Int64)
     record = Dict()
     particle_state, _ = get_retval(particle)
     scene_size, _, _ = get_args(particle)
@@ -116,7 +109,7 @@ function make_record(particle, savedir, t, i)
     return record
 end
 
-function smc(trace, model, num_particles::Int, num_samples::Int; record_json=true, experiment_tag="")
+function smc(trace::Gen.DynamicDSLTrace, model::Gen.DynamicDSLFunction, num_particles::Int, num_samples::Int; record_json=true, experiment_tag="")
     scene_size, max_fireflies, steps = get_args(trace)
     gt_state, observations = get_retval(trace)
 
@@ -156,16 +149,17 @@ function smc(trace, model, num_particles::Int, num_samples::Int; record_json=tru
         obs = get_choices(trace)[:observations => t]
         chm = choicemap()
         chm[:observations => t] = observations[t, :, :, :]
-        
-        # for _ in 1:2
-        #     mcmc_moves(state, t, obs)
-        # end
-        #mcmc_prior_rejuvenation(state, 1000)
+
 
         Gen.maybe_resample!(state, ess_threshold=num_particles/2)
         Gen.particle_filter_step!(state, (scene_size, max_fireflies, t,), (NoChange(), UnknownChange(), NoChange(),), chm)
 
-        mcmc(state, observations[t, :, :, :], t, 10)
+        # mcmc_prior_rejuvenation(state, 100)
+        for _ in 1:10
+            mcmc_moves(state, t, obs)
+        end
+
+        mcmc(state, observations[t, :, :, :], t, 5)
         #mcmc_moves(state, t, obs)
         if record_json
             particles = sample_unweighted_traces(state, 10)

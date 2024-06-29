@@ -41,10 +41,10 @@ model(max_fireflies, steps):
     n_fireflies = {:n_fireflies} ~ uniform_discrete(1, max_fireflies)
     xs = zeros(Float64, n_fireflies, steps)
     ys = zeros(Float64, n_fireflies, steps)
-    sigma_x = 3.
-    sigma_y = 5.
-    motion_var_x = 3.
-    motion_var_y = 3.
+    sigma_x = 1.
+    sigma_y = 1.5
+    motion_var_x = 1.5
+    motion_var_y = 1.5
     colors = zeros(Int, n_fireflies)
     blink_rates = zeros(Float64, n_fireflies)
     blinking_states = zeros(Int, n_fireflies, steps)
@@ -99,9 +99,14 @@ function calculate_firefly_glow(x_loc, y_loc, x_sigma, y_sigma, scene_size)
     For each firefly, calculate glow for each pixel in the scene
     """
     alphas = zeros(Float64, scene_size, scene_size)
-    for row in 1:scene_size
-        for col in 1:scene_size
-            alpha = exp(-((col - x_loc)^2 / (2 * x_sigma^2) + (row - y_loc)^2 / (2 * y_sigma^2)))
+    x_factor = -1 / (2 * x_sigma^2)
+    y_factor = -1 / (2 * y_sigma^2)
+    
+    @inbounds for col in 1:scene_size
+        dx2 = (col - x_loc)^2
+        for row in 1:scene_size
+            dy2 = (row - y_loc)^2
+            alpha = exp(x_factor * dx2 + y_factor * dy2)
             if alpha > 0.01
                 alphas[row, col] = alpha
             end
@@ -118,7 +123,7 @@ function mat_to_img(mat)
     return img
 end
 
-function render(states, step::Int64, scene_size::Int64)
+function render(states::NamedTuple, step::Int64, scene_size::Int64)
     """
     Deterministic renderer
     """
@@ -161,7 +166,7 @@ function Gen.logpdf(::ImageLikelihood, observed_image::Array{Float64,3}, rendere
     sum(i -> - (@inbounds abs2((observed_image[i] - rendered_image[i]) / var) + log(2π)) / 2 - log_var, eachindex(observed_image))
 end
 
-function logpdfmap(::ImageLikelihood, observed_image::Array{Float64,3}, rendered_image::Array{Float64,3}, var)
+function logpdfmap(::ImageLikelihood, observed_image::Array{Float64,3}, rendered_image::Array{Float64,3}, var::Float64)
     # map of logpdf (heatmap) over each pixel, how correct it is
     log_var = log(var)
 
@@ -179,7 +184,7 @@ function logpdfmap(::ImageLikelihood, observed_image::Array{Float64,3}, rendered
     heatmap
 end 
 
-function Gen.random(::ImageLikelihood, rendered_image, var)
+function Gen.random(::ImageLikelihood, rendered_image::Array{Float64, 3}, var::Float64)
     noise = rand(Distributions.Normal(0, var), size(rendered_image))
     rendered_image .+ noise
 end

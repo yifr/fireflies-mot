@@ -16,3 +16,8 @@ Proposal (forward kernel) -- generative function that outputs a choicemap whose 
 - Inference not working
 Debugging visualizations + model
 1. multi-pane visualization
+
+6.24.24
+Data driven proposals
+
+i'd really like to improve the generative model
