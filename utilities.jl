@@ -11,13 +11,11 @@ function timestamp_dir(; base = "out/results", experiment_tag="")
     dir
 end
 
-clip = Base.clamp
-
 function mat_to_img(mat)
     """
     Convert matrix to image
     """
-    img = colorview(RGB, clip.(mat, 0., 1.))
+    img = colorview(RGB, Base.clamp.(mat, 0., 1.))
     return img
 end
 

@@ -119,7 +119,7 @@ function mat_to_img(mat)
     """
     Convert matrix to image
     """
-    img = colorview(RGB, clip.(mat, 0., 1.))
+    img = colorview(RGB, Base.clamp.(mat, 0., 1.))
     return img
 end
 
@@ -149,11 +149,8 @@ function render(states::NamedTuple, step::Int64, scene_size::Int64)
             pixels[3, :, :] .+= glow_vals .* b
         end
     end
-    # img = clip.(pixels, 0., 1.)
-    # img = colorview(RGBA, img)
-    # display(heatmap(img, xlims=(0, scene_size), ylims=(0, scene_size), 
-    #     aspect_ratio=1,legend=false, background_color=:black))
-    pixels = clip.(pixels, 0., 1.)
+    
+    pixels = Base.clamp.(pixels, 0., 1.)
     return pixels
 end
 

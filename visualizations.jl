@@ -202,7 +202,7 @@ Rewrite more composable functions for plotting traces and observations:
         --> Adds ground truth with different markers to a figure
 """
 function mat_to_img(mat)
-    return colorview(RGB, clip.(mat, 0., 1.))
+    return colorview(RGB, Base.clamp.(mat, 0., 1.))
 end
 
 
