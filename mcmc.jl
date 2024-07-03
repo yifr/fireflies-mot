@@ -102,7 +102,7 @@ function average_reconstruction_error(trace::Gen.DynamicDSLTrace)
         observed = choices[:observations => t]
         rendered_image = render(states, t, scene_size)
         errormap = clip.(observed .- rendered_image, 0, 1)
-        errors[:, :, :] .+= errormap
+        errors .+= errormap
     end
 
     # Average over time and color

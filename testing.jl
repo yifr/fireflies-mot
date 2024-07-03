@@ -7,7 +7,7 @@ include("./inference.jl")
 #     trace = simulate(model, (scene_size, steps, max_fireflies))
 #     anim = plot_trace_and_observations(trace)
 #     mp4(anim, "animations/firefly_observation$experiment_tag.mp4", fps=10)
-    
+
 #     inferred_traces = particle_filter_rejuv_resim(trace, firefly_gen_and_observe, 100, 10)
 #     score = 0
 #     for trace in inferred_traces
@@ -29,4 +29,4 @@ function test_model(scene_size, max_fireflies, steps; experiment_tag="")
     return trace, inferred_traces;
 end
 
-#tr, inferred = test_model(32, 3, 10; experiment_tag="profiling");
+test_model(64, 10, 20)

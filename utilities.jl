@@ -11,9 +11,7 @@ function timestamp_dir(; base = "out/results", experiment_tag="")
     dir
 end
 
-function clip(x, low, high)
-    return max(low, min(x, high))
-end
+clip = Base.clamp
 
 function mat_to_img(mat)
     """

@@ -39,9 +39,9 @@ function get_traced_variable_observation(trace; step)
     return chm
 end
 
-function clamp(num, low, hi)
-    return max(low, min(num, hi))
-end
+# function clamp(num, low, hi)
+#     return max(low, min(num, hi))
+# end
 
 
 function observe_at_time(trace, step)
@@ -54,7 +54,7 @@ function observe_at_time(trace, step)
     chm = choicemap()
     for x in 1:scene_size
         for y in 1:scene_size
-            chm[(:pixels, step, x, y)] = clamp(choices[(:pixels, step, x, y)], 0., 1.)
+            chm[(:pixels, step, x, y)] = clip.(choices[(:pixels, step, x, y)], 0., 1.)
         end
     end
     

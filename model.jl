@@ -203,7 +203,7 @@ const image_likelihood = ImageLikelihood()
         states = {:states => t} ~ update_states(states, t, scene_size)
         rendered_state = render(states, t, scene_size)
         observation = {:observations => t} ~ image_likelihood(rendered_state, 0.01)
-        observations[t, :, :, :] = rendered_state
+        observations[t, :, :, :] .= rendered_state
     end
     return states, observations
 end
