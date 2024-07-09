@@ -29,4 +29,4 @@ function test_model(scene_size, max_fireflies, steps; experiment_tag="")
     return trace, inferred_traces;
 end
 
-test_model(64, 10, 20)
+# test_model(64, 10, 20)

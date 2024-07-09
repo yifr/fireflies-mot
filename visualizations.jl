@@ -1,6 +1,7 @@
 using Gen
 using Plots, Images
-include("./model.jl")
+# include("./model.jl")
+include("./utilities.jl")
 
 function plot_multiple_fireflies(trace; plot_ground_truth=true, firefly_size=4)
     """
@@ -201,10 +202,6 @@ Rewrite more composable functions for plotting traces and observations:
     - overlay_ground_truth(trace, figure, step)
         --> Adds ground truth with different markers to a figure
 """
-function mat_to_img(mat)
-    return colorview(RGB, Base.clamp.(mat, 0., 1.))
-end
-
 
 function animate_observations(frames; fps=10)
     n_frames, _, x_size, y_size = size(frames)

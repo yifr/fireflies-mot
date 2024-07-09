@@ -25,7 +25,7 @@ model(max_fireflies, steps):
     - returns trace and observations
 
 """
-
+const FIREFLY_COLORS::Vector{Tuple{Float64, Float64, Float64}} = [(1., 0.2, 0.2), (0.2, 1., 0.2), (0.2, 0.2, 1.)]
 
 @gen function initialize_fireflies(scene_size::Int64, max_fireflies::Int64, steps::Int64)
     """
@@ -41,17 +41,19 @@ model(max_fireflies, steps):
     n_fireflies = {:n_fireflies} ~ uniform_discrete(1, max_fireflies)
     xs = zeros(Float64, n_fireflies, steps)
     ys = zeros(Float64, n_fireflies, steps)
+    vxs = ones(Int64, n_fireflies, steps)
+    vys = ones(Int64, n_fireflies, steps)
+    motion_var_x = 1.
+    motion_var_y = 1.
     sigma_x = 1.
-    sigma_y = 1.5
-    motion_var_x = 1.5
-    motion_var_y = 1.5
+    sigma_y = 1.
     colors = zeros(Int, n_fireflies)
     blink_rates = zeros(Float64, n_fireflies)
     blinking_states = zeros(Int, n_fireflies, steps)
     t = 1
     for n in 1:n_fireflies
         color = {:color => n} ~ uniform_discrete(1, 3)
-        blink_rate = {:blink_rate => n} ~ uniform(0.1, 0.25)
+        blink_rate = {:blink_rate => n} ~ uniform(0.99, 0.995)
         colors[n] = color
         blink_rates[n] = blink_rate
         init_x = {:init_x => n} ~ uniform_discrete(1, scene_size - 1)
@@ -60,10 +62,9 @@ model(max_fireflies, steps):
         ys[n, t] = Float64(init_y)
     end
     
-    return (n_fireflies=n_fireflies, xs=xs, ys=ys, colors=colors, 
+    return (n_fireflies=n_fireflies, xs=xs, ys=ys, vxs=vxs, vys=vys, colors=colors, 
             blink_rates=blink_rates, blinking_states=blinking_states,
-            sigma_x=sigma_x, sigma_y=sigma_y, 
-            motion_var_x=motion_var_x, motion_var_y=motion_var_y)
+            motion_var_x=motion_var_x, motion_var_y=motion_var_y, sigma_x=sigma_x, sigma_y=sigma_y)
 end
 
 @gen function update_states(states, step, scene_size)
@@ -83,8 +84,8 @@ end
             prev_y = ys[n, step-1]
         end
         blink_rate = blink_rates[n]
-        x = {:x => n} ~ trunc_norm(prev_x, motion_var_x, 1., Float64(scene_size))
-        y = {:y => n} ~ trunc_norm(prev_y, motion_var_y, 1., Float64(scene_size))
+        x = {:x => n} ~ trunc_norm(Float64(prev_x), motion_var_x, 1., Float64(scene_size))
+        y = {:y => n} ~ trunc_norm(Float64(prev_y), motion_var_y, 1., Float64(scene_size))
         blinking = {:blinking => n} ~ bernoulli(blink_rate)
         xs[n, step] = x
         ys[n, step] = y
@@ -94,7 +95,7 @@ end
     return states
 end
 
-function calculate_firefly_glow(x_loc, y_loc, x_sigma, y_sigma, scene_size)
+@noinline function calculate_firefly_glow(x_loc, y_loc, x_sigma, y_sigma, scene_size)
     """
     For each firefly, calculate glow for each pixel in the scene
     """
@@ -102,28 +103,57 @@ function calculate_firefly_glow(x_loc, y_loc, x_sigma, y_sigma, scene_size)
     x_factor = -1 / (2 * x_sigma^2)
     y_factor = -1 / (2 * y_sigma^2)
     
-    @inbounds for col in 1:scene_size
+    xmin = round(Int64, max(1, x_loc - 2 * x_sigma))
+    xmax = round(Int64, min(scene_size, x_loc + 2 * x_sigma))
+    ymin = round(Int64, max(1, y_loc - 2 * y_sigma))
+    ymax = round(Int64, min(scene_size, y_loc + 2 * y_sigma))
+
+    for col in xmin:xmax
         dx2 = (col - x_loc)^2
-        for row in 1:scene_size
+        for row in ymin:ymax
             dy2 = (row - y_loc)^2
             alpha = exp(x_factor * dx2 + y_factor * dy2)
             if alpha > 0.01
-                alphas[row, col] = alpha
+                @inbounds alphas[row, col] = alpha
             end
         end
     end
     return alphas
 end
 
-function mat_to_img(mat)
+function add_firefly_glow!(pixels, x_loc, y_loc, x_sigma, y_sigma, color)
     """
-    Convert matrix to image
+    Modify a pixel map to add the glow of a firefly
     """
-    img = colorview(RGB, Base.clamp.(mat, 0., 1.))
-    return img
+    r, g, b = FIREFLY_COLORS[color]
+    scene_size = size(pixels)[1]
+
+    x_factor = -1 / (3 * x_sigma^2)
+    y_factor = -1 / (3 * y_sigma^2)
+    
+    xmin = round(Int64, max(1, x_loc - 2 * x_sigma))
+    xmax = round(Int64, min(scene_size, x_loc + 2 * x_sigma))
+    ymin = round(Int64, max(1, y_loc - 2 * y_sigma))
+    ymax = round(Int64, min(scene_size, y_loc + 2 * y_sigma))
+
+    for i in xmin:xmax
+        dx2 = (i - x_loc)^2
+        for j in ymin:ymax
+            dy2 = (j - y_loc)^2
+            alpha = exp(x_factor * dx2 + y_factor * dy2)
+            if alpha > 0.01
+                @inbounds pixels[j, i, 1] += alpha * r
+                @inbounds pixels[j, i, 2] += alpha * g
+                @inbounds pixels[j, i, 3] += alpha * b
+            end
+        end
+    end
+
+    return nothing
 end
 
-function render(states::NamedTuple, step::Int64, scene_size::Int64)
+
+function render!(states::NamedTuple, step::Int64, scene_size::Int64)
     """
     Deterministic renderer
     """
@@ -134,7 +164,6 @@ function render(states::NamedTuple, step::Int64, scene_size::Int64)
     blinking_states = states[:blinking_states]
     sigma_x = states[:sigma_x]
     sigma_y = states[:sigma_y]
-    color_map = [(1., 0.2, 0.2), (0.2, 1., 0.2), (0.2, 0.2, 1.)]
     pixels = zeros(Float64, 3, scene_size, scene_size)
     for n in 1:n_fireflies
         x = xs[n, step]
@@ -142,15 +171,10 @@ function render(states::NamedTuple, step::Int64, scene_size::Int64)
         color = colors[n]
         blinking = blinking_states[n, step]
         if blinking == 1
-            glow_vals = calculate_firefly_glow(x, y, sigma_x, sigma_y, scene_size)            
-            r, g, b = color_map[color]
-            pixels[1, :, :] .+= glow_vals .* r
-            pixels[2, :, :] .+= glow_vals .* g
-            pixels[3, :, :] .+= glow_vals .* b
+            add_firefly_glow!(pixels, x, y, sigma_x, sigma_y, color)
         end
     end
     
-    pixels = Base.clamp.(pixels, 0., 1.)
     return pixels
 end
 
@@ -204,5 +228,6 @@ const image_likelihood = ImageLikelihood()
     end
     return states, observations
 end
+
 
 

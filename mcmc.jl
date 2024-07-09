@@ -3,13 +3,16 @@ using Plots
 using StatsBase
 using Combinatorics
 include("./utilities.jl")
-include("./model.jl")
+# include("./model.jl")
 include("./distribution_utils.jl")
 
-function run_mh(particles::Gen.ParticleFilterState, i::Int64, selection::DynamicSelection, steps::Int64)
+function run_mh(particles::Gen.ParticleFilterState, i::Int64, selection::DynamicSelection, steps::Int64, label=Val{:unlabeled}())
+    num_accepted = 0
     for _ in 1:steps
         particles.traces[i], accepted = mh(particles.traces[i], selection)
+        num_accepted += accepted
     end
+    return num_accepted / steps
 end
 
 function get_prev_blink(trace::Gen.DynamicDSLTrace, n::Int64, current_t::Int64)
@@ -34,19 +37,24 @@ function get_all_combinations(lst)
     return result
 end
 
-function mcmc_moves(particles::Gen.ParticleFilterState, t::Int64, obs::Array{Float64, 3})
+function mh_block_rejuvenation(particles::Gen.ParticleFilterState, t::Int64, obs::Array{Float64, 3})
     # select variables to change: n_fireflies, colors, blink_rates, blinking_states
     num_particles = length(particles.traces)
     scene_size = get_args(particles.traces[1])[1]
-    errors = zeros(num_particles, 3, scene_size, scene_size)
+
+    nf_accepted = 0 # stats for num fireflies accepted
+    location_accepted = 0 # stats for location changes accepted
+    blinking_accepted = 0 # stats for blinking changes accepted
+    color_accepted = 0 # stats for color changes accepted
     for i in 1:num_particles
         particle = particles.traces[i]
         choices = get_choices(particle)
 
         # Vary number of fireflies
         n_fireflies = get_choices(particle)[:init=>:n_fireflies]
-        run_mh(particles, i, select(:init => :n_fireflies), 3)
-        
+        accepted = run_mh(particles, i, select(:init => :n_fireflies), 100, Val{:n_fireflies}())
+        nf_accepted += accepted
+
         # Vary locations from previous blink - quasi counterfactual that says "could this firefly have ended up here"
         for n in 1:n_fireflies
             selection = select()
@@ -56,31 +64,33 @@ function mcmc_moves(particles::Gen.ParticleFilterState, t::Int64, obs::Array{Flo
                 push!(selection, :states => prev_t => :y => n)
             end
             push!(selection, :states => t => :blinking => n)
-            run_mh(particles, i, selection, 10)
+            accepted = run_mh(particles, i, selection, 100, Val{:trajectory}())
+            location_accepted += accepted
         end
 
-        # Enumerate all the possible changes to current blinking
-        
-        # all_combinations = get_all_combinations(1:n_fireflies)
-        # for combinations in all_combinations
-        #     for n in combinations
-        #         push!(selection, :states => t => :blinking => n)
-        #     end
-        #     run_mh(particles, i, selection, 10)
-        # end
         for n in 1:n_fireflies
             selection = select()
             push!(selection, :states => t => :blinking => n)
-            run_mh(particles, i, selection, 5)
+            accepted = run_mh(particles, i, selection, 100, Val{:blink}())
+            blinking_accepted += accepted
         end
 
         # vary color 
         for n in 1:n_fireflies
             selection = select()
             push!(selection, :init => :color => n)
-            run_mh(particles, i, selection, 3)
+            accepted = run_mh(particles, i, selection, 4, Val{:color}())
+            color_accepted += accepted
         end
     end 
+    
+    nf_accepted = nf_accepted / num_particles
+    location_accepted = location_accepted / num_particles
+    blinking_accepted = blinking_accepted / num_particles
+    color_accepted = color_accepted / num_particles
+
+    println("NF: ", nf_accepted, " Location: ", location_accepted, " Blinking: ", blinking_accepted, " Color: ", color_accepted, "\n")
+    # return nf_accepted, location_accepted, blinking_accepted, color_accepted
 end
 
 
@@ -101,7 +111,7 @@ function average_reconstruction_error(trace::Gen.DynamicDSLTrace)
     for t in 1:steps
         observed = choices[:observations => t]
         rendered_image = render(states, t, scene_size)
-        errormap = clip.(observed .- rendered_image, 0, 1)
+        errormap = Base.clamp.(observed .- rendered_image, 0, 1)
         errors .+= errormap
     end
 
@@ -136,7 +146,7 @@ function observed_color_hist(trace)
     for t in 1:steps
         all_obs .+= choices[:observations => t]
     end
-    color_hist = clip.(StatsBase.mean(all_obs; dims=[2,3])[:, 1, 1], 0., 1.) # shape: (3,)
+    color_hist = Base.clamp.(StatsBase.mean(all_obs; dims=[2,3])[:, 1, 1], 0., 1.) # shape: (3,)
     color_hist = color_hist / sum(color_hist)
     return color_hist
 end
@@ -188,7 +198,7 @@ end
     nothing
 end
 
-function mcmc(particles, obs, steps, mcmc_steps)
+function data_driven_mcmc(particles, obs, steps, mcmc_steps)
     for i in 1:length(particles.traces)
         for _ in 1:mcmc_steps
             particles.traces[i], accepted = mh(particles.traces[i], proposal, ())    

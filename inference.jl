@@ -148,14 +148,8 @@ function smc(trace::Gen.DynamicDSLTrace, model::Gen.DynamicDSLFunction, num_part
 
         Gen.maybe_resample!(state, ess_threshold=num_particles/2)
         Gen.particle_filter_step!(state, (scene_size, max_fireflies, t,), (NoChange(), UnknownChange(), NoChange(),), chm)
-
-        # mcmc_prior_rejuvenation(state, 100)
-        for _ in 1:10
-            mcmc_moves(state, t, obs)
-        end
-
-        mcmc(state, observations[t, :, :, :], t, 5)
-        #mcmc_moves(state, t, obs)
+        mh_block_rejuvenation(state, t, obs)
+        
         if record_json
             particles = sample_unweighted_traces(state, 10)
             for i=1:10
