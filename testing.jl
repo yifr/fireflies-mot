@@ -1,5 +1,5 @@
 include("./distribution_utils.jl")
-include("./model.jl")
+include("./unfold_model.jl")
 include("./visualizations.jl")
 include("./inference.jl")
 
@@ -20,11 +20,12 @@ include("./inference.jl")
 # end
 
 
+Gen.@load_generated_functions
 
 # pure runtime
 function test_model(scene_size, max_fireflies, steps; experiment_tag="")
-    trace = simulate(model, (scene_size, max_fireflies, steps))
-    inferred_traces = smc(trace, model, 20, 10; record_json=true, experiment_tag=experiment_tag)
+    trace = simulate(unfold_model, (scene_size, max_fireflies, steps))
+    inferred_traces = smc_unfold(trace, unfold_model, 20, 10; record_json=true, experiment_tag=experiment_tag)
 
     return trace, inferred_traces;
 end

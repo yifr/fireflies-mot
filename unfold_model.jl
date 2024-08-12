@@ -31,8 +31,6 @@ end
 
 update_velocity = Switch(maintain_velocity, reverse_velocity)
 init_all_states = Map(init_single_state)
-chain_states_single = Unfold(update_single_state)
-chain_states = Map(chain_states_single)
 
 @gen (static) function update_single_state(t::Int64, prev_state::FireflyState, scene_dim::Int64)
     prev_x = prev_state.x
@@ -51,7 +49,10 @@ chain_states = Map(chain_states_single)
     return FireflyState(x, y, vx, vy, blinking, prev_state.blink_rate)
 end
 
-Gen.@load_generated_functions
+chain_states_single = Unfold(update_single_state)
+chain_states = Map(chain_states_single)
+
+#Gen.@load_generated_functions
 
 @gen (static) function unfold_model(T::Int, scene_size::Int)
     num ~ uniform_discrete(1, 4)

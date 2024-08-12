@@ -4,6 +4,7 @@ using Distributions
 using Plots
 include("./distribution_utils.jl")
 include("./utilities.jl")
+include("./likelihood.jl")
 
 """
 Firefly model:
@@ -25,7 +26,22 @@ model(max_fireflies, steps):
     - returns trace and observations
 
 """
-const FIREFLY_COLORS::Vector{Tuple{Float64, Float64, Float64}} = [(1., 0.2, 0.2), (0.2, 1., 0.2), (0.2, 0.2, 1.)]
+FIREFLY_COLORS::Vector{Tuple{Float64, Float64, Float64}} = [(1., 0.2, 0.2), (0.2, 1., 0.2), (0.2, 0.2, 1.)]
+
+struct FireflyState
+    n_fireflies::Int64
+    xs::Array{Float64, 1}
+    ys::Array{Float64, 1}
+    vxs::Array{Float64, 1}
+    vys::Array{Float64, 1}
+    colors::Array{Int64, 1}
+    blink_rates::Array{Float64, 1}
+    blinking_states::Array{Int, 1}
+    motion_var_x::Float64
+    motion_var_y::Float64
+    sigma_x::Float64
+    sigma_y::Float64
+end
 
 @gen function initialize_fireflies(scene_size::Int64, max_fireflies::Int64, steps::Int64)
     """
@@ -95,32 +111,6 @@ end
     return states
 end
 
-@noinline function calculate_firefly_glow(x_loc, y_loc, x_sigma, y_sigma, scene_size)
-    """
-    For each firefly, calculate glow for each pixel in the scene
-    """
-    alphas = zeros(Float64, scene_size, scene_size)
-    x_factor = -1 / (2 * x_sigma^2)
-    y_factor = -1 / (2 * y_sigma^2)
-    
-    xmin = round(Int64, max(1, x_loc - 2 * x_sigma))
-    xmax = round(Int64, min(scene_size, x_loc + 2 * x_sigma))
-    ymin = round(Int64, max(1, y_loc - 2 * y_sigma))
-    ymax = round(Int64, min(scene_size, y_loc + 2 * y_sigma))
-
-    for col in xmin:xmax
-        dx2 = (col - x_loc)^2
-        for row in ymin:ymax
-            dy2 = (row - y_loc)^2
-            alpha = exp(x_factor * dx2 + y_factor * dy2)
-            if alpha > 0.01
-                @inbounds alphas[row, col] = alpha
-            end
-        end
-    end
-    return alphas
-end
-
 function add_firefly_glow!(pixels, x_loc, y_loc, x_sigma, y_sigma, color)
     """
     Modify a pixel map to add the glow of a firefly
@@ -179,40 +169,6 @@ function render!(states::NamedTuple, step::Int64, scene_size::Int64)
 end
 
 
-struct ImageLikelihood <: Gen.Distribution{Array} end
-
-function Gen.logpdf(::ImageLikelihood, observed_image::Array{Float64,3}, rendered_image::Array{Float64,3}, var)
-    # precomputing log(var) and assuming mu=0 both give speedups here
-    log_var = log(var)
-    sum(i -> - (@inbounds abs2((observed_image[i] - rendered_image[i]) / var) + log(2π)) / 2 - log_var, eachindex(observed_image))
-end
-
-function logpdfmap(::ImageLikelihood, observed_image::Array{Float64,3}, rendered_image::Array{Float64,3}, var::Float64)
-    # map of logpdf (heatmap) over each pixel, how correct it is
-    log_var = log(var)
-
-    C, H, W = size(observed_image)
-
-    heatmap = zeros(Float64, H, W)
-
-    for hi in 1:H
-        for wi in 1:W
-            for ci in 1:3
-                heatmap[hi, wi] += -(@inbounds abs2((observed_image[ci, hi, wi] - rendered_image[ci, hi, wi]) / var) + log(2π)) / 2 - log_var
-            end
-        end
-    end
-    heatmap
-end 
-
-function Gen.random(::ImageLikelihood, rendered_image::Array{Float64, 3}, var::Float64)
-    noise = rand(Distributions.Normal(0, var), size(rendered_image))
-    rendered_image .+ noise
-end
-
-const image_likelihood = ImageLikelihood()
-(::ImageLikelihood)(rendered_image, var) = random(ImageLikelihood(), rendered_image, var)
-
 
 @gen function model(scene_size::Int64, max_fireflies::Int64, steps::Int64)
     """
@@ -228,6 +184,3 @@ const image_likelihood = ImageLikelihood()
     end
     return states, observations
 end
-
-
-

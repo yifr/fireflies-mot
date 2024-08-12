@@ -172,3 +172,92 @@ function smc(trace::Gen.DynamicDSLTrace, model::Gen.DynamicDSLFunction, num_part
     return Gen.sample_unweighted_traces(state, num_samples)
 end;
 
+
+
+function get_unfold_observation(trace; step::Int64)
+    args = get_args(trace)
+    choices = get_choices(trace)
+    n_fireflies = choices[:n_fireflies]
+
+    observations = []
+    chm = Gen.choicemap()
+
+    for n in 1:n_fireflies
+        blinking = choices[:states => n => step => :blinking]
+        if blinking == 1
+            x = choices[:states => n => step => :x]
+            y = choices[:states => n => step => :x]
+            
+            chm[:states => n => step => :x] = trunc_norm(x, 0.1, 1., Float64(scene_size))
+            chm[:states => n => step => :x] = trunc_norm(y, 0.1, 1., Float64(scene_size))
+            chm[:states => n => step => :blinking] = 1
+        end
+    end
+
+    return chm
+end
+
+function smc_unfold(trace, model, num_particles::Int, num_samples::Int; record_json=true, experiment_tag="")
+    scene_size, max_fireflies, steps = get_args(trace)
+    gt_state = get_retval(trace)
+    #gt_state, observations = get_retval(trace)
+
+    chm = get_unfold_observation(trace; step=1)
+
+    state = Gen.initialize_particle_filter(model, (scene_size, max_fireflies,1), chm, num_particles)
+    if record_json
+        savedir = timestamp_dir(experiment_tag=experiment_tag)
+        res_json = Dict(
+            "num_particles" => num_particles,
+            "num_samples" => num_samples,
+            "experiment_tag" => experiment_tag,
+            "scene_size" => scene_size,
+            "max_fireflies" => max_fireflies,
+            "steps" => steps,
+            "gt_state" => gt_state,
+            "smc_steps" => [[Dict() for _ in 1:num_particles] for _ in 1:steps]
+        )
+
+        particles = sample_unweighted_traces(state, 10)
+        for i=1:10
+            t = 1
+            particle = particles[i]
+            res_json["smc_steps"][t][i] = make_record(particle, savedir, t, i)
+        end
+    end
+
+    mh_accepted = []
+    for t=2:steps
+        # write out observation and save filepath name
+        # record all the particle traces at time t - 1
+        println()
+        println("t=$t")
+    
+        chm = get_unfold_observation(trace; step=t)
+
+        Gen.maybe_resample!(state, ess_threshold=num_particles/2)
+        Gen.particle_filter_step!(state, (scene_size, max_fireflies, t,), (NoChange(), UnknownChange(), NoChange(),), chm)
+        mh_block_rejuvenation(state, t, obs)
+        
+        if record_json
+            particles = sample_unweighted_traces(state, 10)
+            for i=1:10
+                particle = particles[i]
+                res_json["smc_steps"][t][i] = make_record(particle, savedir, t - 1, i)
+            end
+        end
+    end
+
+    if record_json
+        save_path = joinpath(savedir, "results.json")
+        println("http://localhost:8080/viz/viz.html?path=../$save_path")
+        open(save_path, "w") do f
+            JSON.print(f, res_json)
+        end
+    end
+
+    # display(plot([mh_accepted], title="MH Acceptance Rate", xlabel="Step", ylabel="Acceptance Rate"))
+    # return a sample of unweighted traces from the weighted collection
+    return Gen.sample_unweighted_traces(state, num_samples)
+end;
+
