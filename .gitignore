@@ -5,3 +5,4 @@ animations/
 out/*
 errors/*
 *.gz
+__pycache__/*
