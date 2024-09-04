@@ -135,14 +135,14 @@ def step_and_observe(prev_state):
     return (fireflies, observation)
 
 @gen 
-def multifirefly_model(max_fireflies, run_until): 
+def multifirefly_model(max_fireflies, temporal_mask): 
     n_fireflies = labcat(unicat(max_fireflies), max_fireflies) @ "n_fireflies"
     masks = jnp.array(max_fireflies <= n_fireflies)
     init_states = init_firefly.mask().vmap(in_axes=(0))(masks) @ "init"
-    printd(init_states)
+
     init_obs = jnp.zeros((SCENE_SIZE, SCENE_SIZE))
-    temporal_mask = jnp.arange(TIME_STEPS) < run_until
-    fireflies, observations = masked_iterate_combinator(step_and_observe, n=TIME_STEPS)((init_states, init_obs), temporal_mask) @ "steps"
+    steps = len(temporal_mask)
+    fireflies, observations = masked_iterate_combinator(step_and_observe, n=steps)((init_states, init_obs), temporal_mask) @ "steps"
     return fireflies, observations
 
 def get_frames(chm):
@@ -166,20 +166,18 @@ def main():
     key = jax.random.PRNGKey(3124)
     key, subkey = jax.random.split(key)
     max_fireflies = jnp.arange(1, 5)
-    multi_model_jit = jax.jit(multifirefly_model.simulate)
-    chm = C["n_fireflies"].set(1)
-
-    #tr = multi_model_jit(subkey, (max_fireflies,))
-
+    multi_model_jit = jax.jit(multifirefly_model.importance)
+    constraints = C["n_fireflies"].set(1)
     key, subkey = jax.random.split(key)
-    tr = multi_model_jit(subkey,(max_fireflies, TIME_STEPS))
 
+    run_until = jnp.arange(TIME_STEPS) < TIME_STEPS
+    tr, weight = multi_model_jit(subkey, constraints, (max_fireflies, run_until,))
     chm = tr.get_sample()
-    print(chm)
+
     print("Generating animation")
     frames = get_frames(chm)
     ani = animate(frames, 20)
-    print("Saving animation...")
+    # print("Saving animation...")
     # ani.save("animations/genjax_model/maxglowsize_1.gif", writer="imagemagick", fps=20)
     plt.show()
 
