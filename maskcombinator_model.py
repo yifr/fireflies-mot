@@ -5,6 +5,8 @@ from genjax import gen
 from genjax import ChoiceMapBuilder as C
 from genjax import ExactDensity, Pytree
 from tensorflow_probability.substrates import jax as tfp
+from genjax._src.core.interpreters.staging import Flag
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 from functools import partial
@@ -17,7 +19,7 @@ tfd = tfp.distributions
 def printd(val):
     jax.debug.print("{val}", val=val)
 
-def masked_iterate_combinator(step, **scan_kwargs):
+def masked_scan_combinator(step, **scan_kwargs):
     def scan_step_pre(state, flag):
         return flag, state
 
@@ -110,13 +112,27 @@ def step_firefly(firefly):
 
 @gen
 def observe_fireflies(xs, ys, blinks, state_durations):
-    #v_render_frame = jax.vmap(render_frame, in_axes=(0, 0, 0, 0))
+    """
+    Generate deterministic rendering given xs, ys and blinks,
+    and apply small amount of noise (truncated, to keep everything in nice pixel space)
+
+    Assumes xs, ys, blinks, state_durations have been filled with 0s in place of masks
+    """
     rendered = render_frame(xs, ys, blinks, state_durations)
     noisy_obs = genjax.truncated_normal(rendered, 0.01, 0.0, 1.0) @ "pixels"
     return noisy_obs
 
 def get_masked_values(values, mask, fill_value=0.):
-    return jnp.where(mask, values, fill_value)
+    """
+    Fetches the unmasked values of a mask, and replace the rest with some fill value
+
+    Check if masks are wrapped in `Flag` construct.
+    """
+    if type(mask) == Flag:
+        fill = jnp.zeros_like(values)
+        return mask.where(values, fill)
+    else:
+        return jnp.where(mask, values, fill_value)
 
 @gen
 def step_and_observe(prev_state):
@@ -136,13 +152,30 @@ def step_and_observe(prev_state):
 
 @gen 
 def multifirefly_model(max_fireflies, temporal_mask): 
+    """
+    Samples a number of fireflies and runs a vmapped `step_and_observe` model
+    for a number of time steps, masking out unused fireflies. 
+
+    Args:
+        max_fireflies (Array[Int]): int array of indices (jnp.arange(1, max_fireflies))
+        temporal_mask (Flag(Array[Bool])): Boolean array to mask timesteps (for SMC). It should be 
+                                            wrapped in the `Flag` construct for now.
+
+    Returns:
+        fireflies: dict representation of all the fireflies (including masked ones)
+        observations: jnp.ndarray (t, scene_size, scene_size) of observed values
+    """
+    if type(temporal_mask) != Flag:
+        temporal_mask = Flag(temporal_mask)
+
     n_fireflies = labcat(unicat(max_fireflies), max_fireflies) @ "n_fireflies"
-    masks = jnp.array(max_fireflies <= n_fireflies)
+    masks = Flag(jnp.array(max_fireflies <= n_fireflies))
     init_states = init_firefly.mask().vmap(in_axes=(0))(masks) @ "init"
 
     init_obs = jnp.zeros((SCENE_SIZE, SCENE_SIZE))
-    steps = len(temporal_mask)
-    fireflies, observations = masked_iterate_combinator(step_and_observe, n=steps)((init_states, init_obs), temporal_mask) @ "steps"
+    
+    steps = len(temporal_mask.f)
+    fireflies, observations = masked_scan_combinator(step_and_observe, n=steps)((init_states, init_obs), temporal_mask) @ "steps"
     return fireflies, observations
 
 def get_frames(chm):
@@ -170,7 +203,7 @@ def main():
     constraints = C["n_fireflies"].set(1)
     key, subkey = jax.random.split(key)
 
-    run_until = jnp.arange(TIME_STEPS) < TIME_STEPS
+    run_until = Flag(jnp.arange(TIME_STEPS) < TIME_STEPS)
     tr, weight = multi_model_jit(subkey, constraints, (max_fireflies, run_until,))
     chm = tr.get_sample()
 
