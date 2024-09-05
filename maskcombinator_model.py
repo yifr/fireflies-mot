@@ -150,6 +150,8 @@ def step_and_observe(prev_state):
     
     return (fireflies, observation)
 
+maskscan_step_observe = masked_scan_combinator(step_and_observe, n=TIME_STEPS)
+
 @gen 
 def multifirefly_model(max_fireflies, temporal_mask): 
     """
@@ -175,15 +177,18 @@ def multifirefly_model(max_fireflies, temporal_mask):
     init_obs = jnp.zeros((SCENE_SIZE, SCENE_SIZE))
     
     steps = len(temporal_mask.f)
-    fireflies, observations = masked_scan_combinator(step_and_observe, n=steps)((init_states, init_obs), temporal_mask) @ "steps"
+    fireflies, observations = maskscan_step_observe((init_states, init_obs), temporal_mask) @ "steps"
     return fireflies, observations
 
 def get_frames(chm):
     observations = list(chm["steps", ..., "observations", "pixels"].value)
     return observations
 
-def animate(frames, fps):
-    fig, ax = plt.subplots()
+def animate(frames, fps, ax=None):
+    if ax == None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.get_figure()
     img = ax.imshow(frames[0], vmin=0, vmax=1, cmap="hot")  
 
     def update(frame):
