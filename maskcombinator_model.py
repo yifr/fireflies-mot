@@ -150,9 +150,9 @@ def step_and_observe(prev_state):
     
     return (fireflies, observation)
 
-maskscan_step_observe = masked_scan_combinator(step_and_observe, n=TIME_STEPS)
+maskscan_step_observe = jax.jit(masked_scan_combinator(step_and_observe, n=TIME_STEPS))
 
-@gen 
+@gen    
 def multifirefly_model(max_fireflies, temporal_mask): 
     """
     Samples a number of fireflies and runs a vmapped `step_and_observe` model

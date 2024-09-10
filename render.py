@@ -17,6 +17,8 @@ def render_frame(xs, ys, blinks, state_durations):
     blink_durations = state_durations * blinks
     glow_sizes = jnp.where(blink_durations < MAX_GLOW_SIZE, blink_durations, MAX_GLOW_SIZE)
     glow_values = jax.vmap(calculate_glow, in_axes=(0, 0))(coordinates, glow_sizes)
+
+    # TODO: speed this up getting rid of scan
     glow_grid = jnp.zeros((SCENE_SIZE, SCENE_SIZE)) 
 
     def accumulate_glow(carry, values):
