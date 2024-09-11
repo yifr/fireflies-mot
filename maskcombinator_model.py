@@ -24,7 +24,7 @@ def masked_scan_combinator(step, **scan_kwargs):
         return flag, state
 
     def scan_step_post(_unused_args, masked_retval):
-        return masked_retval.value, None
+        return masked_retval.value, _unused_args
 
     # scan_step: (a, Bool) -> a
     scan_step = step.mask().dimap(pre=scan_step_pre, post=scan_step_post)
@@ -139,8 +139,7 @@ def step_and_observe(prev_state):
     masked_fireflies, prev_obs = prev_state
     masks = masked_fireflies.flag
     firefly_vals = masked_fireflies.value
-    step_fn = step_firefly.mask().vmap(in_axes=(0, 0))
-    fireflies = step_fn(masks, firefly_vals) @ "dynamics"  
+    fireflies = step_firefly.mask().vmap(in_axes=(0, 0))(masks, firefly_vals) @ "dynamics"
     firefly_vals = fireflies.value
     xs = get_masked_values(firefly_vals["x"], masks)
     ys = get_masked_values(firefly_vals["y"], masks)
@@ -149,8 +148,6 @@ def step_and_observe(prev_state):
     observation = observe_fireflies(xs, ys, blinks, state_durations) @ "observations"
     
     return (fireflies, observation)
-
-maskscan_step_observe = jax.jit(masked_scan_combinator(step_and_observe, n=TIME_STEPS))
 
 @gen    
 def multifirefly_model(max_fireflies, temporal_mask): 
@@ -167,17 +164,15 @@ def multifirefly_model(max_fireflies, temporal_mask):
         fireflies: dict representation of all the fireflies (including masked ones)
         observations: jnp.ndarray (t, scene_size, scene_size) of observed values
     """
-    if type(temporal_mask) != Flag:
-        temporal_mask = Flag(temporal_mask)
 
     n_fireflies = labcat(unicat(max_fireflies), max_fireflies) @ "n_fireflies"
-    masks = Flag(jnp.array(max_fireflies <= n_fireflies))
+    masks = jnp.array(max_fireflies <= n_fireflies)
     init_states = init_firefly.mask().vmap(in_axes=(0))(masks) @ "init"
 
     init_obs = jnp.zeros((SCENE_SIZE, SCENE_SIZE))
     
-    steps = len(temporal_mask.f)
-    fireflies, observations = maskscan_step_observe((init_states, init_obs), temporal_mask) @ "steps"
+    fireflies, observations = masked_scan_combinator(step_and_observe, n=TIME_STEPS)(
+                            (init_states, init_obs), temporal_mask) @ "steps"
     return fireflies, observations
 
 def get_frames(chm):
@@ -208,10 +203,10 @@ def main():
     constraints = C["n_fireflies"].set(1)
     key, subkey = jax.random.split(key)
 
-    run_until = Flag(jnp.arange(TIME_STEPS) < TIME_STEPS)
+    run_until = jnp.arange(TIME_STEPS) < TIME_STEPS
     tr, weight = multi_model_jit(subkey, constraints, (max_fireflies, run_until,))
     chm = tr.get_sample()
-
+    x = chm["steps", ..., "dynamics", ..., "x"]
     print("Generating animation")
     frames = get_frames(chm)
     ani = animate(frames, 20)
