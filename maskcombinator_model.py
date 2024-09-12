@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import genjax
-from genjax import gen
+from genjax import gen, Mask
 from genjax import ChoiceMapBuilder as C
 from genjax import ExactDensity, Pytree
 from tensorflow_probability.substrates import jax as tfp
@@ -14,6 +14,8 @@ import matplotlib.animation as animation
 from distributions import *
 from render import *
 from config import * 
+from utils import *
+# from visualizer import *
 tfd = tfp.distributions
 
 def printd(val):
@@ -122,18 +124,6 @@ def observe_fireflies(xs, ys, blinks, state_durations):
     noisy_obs = genjax.truncated_normal(rendered, 0.01, 0.0, 1.0) @ "pixels"
     return noisy_obs
 
-def get_masked_values(values, mask, fill_value=0.):
-    """
-    Fetches the unmasked values of a mask, and replace the rest with some fill value
-
-    Check if masks are wrapped in `Flag` construct.
-    """
-    if type(mask) == Flag:
-        fill = jnp.zeros_like(values)
-        return mask.where(values, fill)
-    else:
-        return jnp.where(mask, values, fill_value)
-
 @gen
 def step_and_observe(prev_state):
     masked_fireflies, prev_obs = prev_state
@@ -141,10 +131,10 @@ def step_and_observe(prev_state):
     firefly_vals = masked_fireflies.value
     fireflies = step_firefly.mask().vmap(in_axes=(0, 0))(masks, firefly_vals) @ "dynamics"
     firefly_vals = fireflies.value
-    xs = get_masked_values(firefly_vals["x"], masks)
-    ys = get_masked_values(firefly_vals["y"], masks)
-    blinks = get_masked_values(firefly_vals["blinking"], masks)
-    state_durations = get_masked_values(firefly_vals["state_duration"], masks)
+    xs = get_masked_values(masks,firefly_vals["x"])
+    ys = get_masked_values(masks, firefly_vals["y"])
+    blinks = get_masked_values(masks, firefly_vals["blinking"])
+    state_durations = get_masked_values(masks, firefly_vals["state_duration"])
     observation = observe_fireflies(xs, ys, blinks, state_durations) @ "observations"
     
     return (fireflies, observation)
@@ -176,25 +166,6 @@ def multifirefly_model(max_fireflies, temporal_mask):
     fireflies, observations = mask_scan_step(
                             (init_states, init_obs), temporal_mask) @ "steps"
     return fireflies, observations
-
-def get_frames(chm):
-    observations = list(chm["steps", ..., "observations", "pixels"].value)
-    return observations
-
-def animate(frames, fps, ax=None):
-    if ax == None:
-        fig, ax = plt.subplots()
-    else:
-        fig = ax.get_figure()
-    img = ax.imshow(frames[0], vmin=0, vmax=1, cmap="hot")  
-
-    def update(frame):
-        img.set_data(frames[frame])  
-        ax.set_title(f"Frame {frame}")
-        return [img]  
-
-    ani = animation.FuncAnimation(fig, update, frames=len(frames), interval=1000/fps, blit=True)
-    return ani
 
 
 def main():
