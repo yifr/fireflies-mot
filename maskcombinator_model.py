@@ -24,7 +24,7 @@ def masked_scan_combinator(step, **scan_kwargs):
         return flag, state
 
     def scan_step_post(_unused_args, masked_retval):
-        return masked_retval.value, _unused_args
+        return masked_retval.value, None
 
     # scan_step: (a, Bool) -> a
     scan_step = step.mask().dimap(pre=scan_step_pre, post=scan_step_post)
@@ -149,6 +149,8 @@ def step_and_observe(prev_state):
     
     return (fireflies, observation)
 
+mask_scan_step = masked_scan_combinator(step_and_observe, n=TIME_STEPS)
+
 @gen    
 def multifirefly_model(max_fireflies, temporal_mask): 
     """
@@ -171,7 +173,7 @@ def multifirefly_model(max_fireflies, temporal_mask):
 
     init_obs = jnp.zeros((SCENE_SIZE, SCENE_SIZE))
     
-    fireflies, observations = masked_scan_combinator(step_and_observe, n=TIME_STEPS)(
+    fireflies, observations = mask_scan_step(
                             (init_states, init_obs), temporal_mask) @ "steps"
     return fireflies, observations
 
