@@ -124,4 +124,5 @@ def animate(frames, fps, ax=None):
         return [img]  
 
     ani = animation.FuncAnimation(fig, update, frames=len(frames), interval=1000/fps, blit=True)
+    plt.close()
     return ani
