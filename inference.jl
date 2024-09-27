@@ -84,15 +84,11 @@ the update step will be unable to constrain the observation of (:pos, n>1, t) an
     end
 end;
 
-function mean(arr)
-    return sum(arr) / length(arr)
-end
-
 function make_record(particle::Gen.DynamicDSLTrace, savedir::String, t::Int64, i::Int64)
     record = Dict()
     particle_state, _ = get_retval(particle)
     scene_size, _, _ = get_args(particle)
-    rendered_img = mat_to_img(render(particle_state, t, scene_size))
+    rendered_img = mat_to_img(render!(particle_state, t, scene_size))
     record["state"] = particle_state
     record["score"] = get_score(particle)
     # save rendered_img to file
@@ -135,21 +131,24 @@ function smc(trace::Gen.DynamicDSLTrace, model::Gen.DynamicDSLFunction, num_part
     end
 
     mh_accepted = []
+    println("Running SMC")
+    println(repeat(".", steps-1), "| END")
     for t=2:steps
         # write out observation and save filepath name
         # record all the particle traces at time t - 1
-        println()
-        println("t=$t")
+        print(".")
     
         obs = get_choices(trace)[:observations => t]
         chm = choicemap()
         chm[:observations => t] = observations[t, :, :, :]
 
-
         Gen.maybe_resample!(state, ess_threshold=num_particles/2)
         Gen.particle_filter_step!(state, (scene_size, max_fireflies, t,), (NoChange(), UnknownChange(), NoChange(),), chm)
-        mh_block_rejuvenation(state, t, obs)
-        
+
+        # mh_block_rejuvenation(state, t, obs)
+        # data_driven_mcmc(state, obs, t, 10)
+        # mcmc_prior_rejuvenation(state, 1)
+
         if record_json
             particles = sample_unweighted_traces(state, 10)
             for i=1:10
