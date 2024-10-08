@@ -25,7 +25,7 @@ model(max_fireflies, steps):
     - returns trace and observations
 
 """
-const FIREFLY_COLORS::Vector{Tuple{Float64, Float64, Float64}} = [(1., 0., 0.), (0., 1., 0.), (0., 0., 1.)]
+const FIREFLY_COLORS::Vector{Tuple{Float64, Float64, Float64}} = [(1., 0.3, 0.3), (0.3, 1., 0.3), (0.3, 0.3, 1.)]
 
 @gen function initialize_fireflies(scene_size::Int64, max_fireflies::Int64, steps::Int64)
     """
@@ -124,24 +124,25 @@ function add_firefly_glow!(pixels, x_loc, y_loc, x_sigma, y_sigma, color)
     r, g, b = FIREFLY_COLORS[color]
     scene_size = size(pixels)[2]
 
-    x_factor = -1 / (2 * x_sigma^2)
-    y_factor = -1 / (2 * y_sigma^2)
+    # x_factor = -1 / (2 * x_sigma^2)
+    # y_factor = -1 / (2 * y_sigma^2)
     
-    xmin = max(1, round(Int, x_loc - 3 * x_sigma))
-    xmax = min(scene_size, round(Int, x_loc + 3 * x_sigma))
-    ymin = max(1, round(Int, y_loc - 3 * y_sigma))
-    ymax = min(scene_size, round(Int, y_loc + 3 * y_sigma))
+    xmin = max(1, round(Int, x_loc - 2 * x_sigma))
+    xmax = min(scene_size, round(Int, x_loc + 2 * x_sigma))
+    ymin = max(1, round(Int, y_loc - 2 * y_sigma))
+    ymax = min(scene_size, round(Int, y_loc + 2 * y_sigma))
 
     for i in xmin:xmax
-        dx2 = (i - x_loc)^2
+        # dx2 = (i - x_loc)^2
         for j in ymin:ymax
-            dy2 = (j - y_loc)^2
-            alpha = exp(x_factor * dx2 + y_factor * dy2) 
-            if alpha > 0.01
-                @inbounds pixels[1, j, i] += r * alpha
-                @inbounds pixels[2, j, i] += g * alpha
-                @inbounds pixels[3, j, i] += b * alpha
-            end
+            # dy2 = (j - y_loc)^2
+            # alpha = exp(x_factor * dx2 + y_factor * dy2) 
+            alpha = 0.95
+            #if alpha > 0.01
+            @inbounds pixels[1, j, i] += r * alpha
+            @inbounds pixels[2, j, i] += g * alpha
+            @inbounds pixels[3, j, i] += b * alpha
+            #end
         end
     end
 

@@ -3,7 +3,7 @@ using Plots
 using StatsBase
 using Combinatorics
 include("./utilities.jl")
-# include("./model.jl")
+include("./model.jl")
 include("./distribution_utils.jl")
 
 function run_mh(particles::Gen.ParticleFilterState, i::Int64, selection::DynamicSelection, steps::Int64, label=Val{:unlabeled}())
@@ -52,7 +52,7 @@ function mh_block_rejuvenation(particles::Gen.ParticleFilterState, t::Int64, obs
 
         # Vary number of fireflies
         n_fireflies = get_choices(particle)[:init=>:n_fireflies]
-        accepted = run_mh(particles, i, select(:init => :n_fireflies), 100, Val{:n_fireflies}())
+        accepted = run_mh(particles, i, select(:init => :n_fireflies), 4, Val{:n_fireflies}())
         nf_accepted += accepted
 
         # Vary locations from previous blink - quasi counterfactual that says "could this firefly have ended up here"
@@ -82,6 +82,7 @@ function mh_block_rejuvenation(particles::Gen.ParticleFilterState, t::Int64, obs
             accepted = run_mh(particles, i, selection, 4, Val{:color}())
             color_accepted += accepted
         end
+        
     end 
     
     nf_accepted = nf_accepted / num_particles
@@ -89,7 +90,6 @@ function mh_block_rejuvenation(particles::Gen.ParticleFilterState, t::Int64, obs
     blinking_accepted = blinking_accepted / num_particles
     color_accepted = color_accepted / num_particles
 
-    println("NF: ", nf_accepted, " Location: ", location_accepted, " Blinking: ", blinking_accepted, " Color: ", color_accepted, "\n")
     # return nf_accepted, location_accepted, blinking_accepted, color_accepted
 end
 
@@ -97,8 +97,9 @@ end
 function mcmc_prior_rejuvenation(particles::Gen.ParticleFilterState, mcmc_steps::Int64)
     num_particles = length(particles.traces)
     for i in 1:num_particles
-        particle = particles.traces[i]
-        run_mh(particles, i, selectall(), mcmc_steps)
+        for _ in 1:mcmc_steps
+            particles.traces[i], accepted = mh(particles.traces[i], selectall())
+        end
     end
 end
 
@@ -110,7 +111,7 @@ function average_reconstruction_error(trace::Gen.DynamicDSLTrace)
     states, observations = get_retval(trace)
     for t in 1:steps
         observed = choices[:observations => t]
-        rendered_image = render(states, t, scene_size)
+        rendered_image = render!(states, t, scene_size)
         errormap = Base.clamp.(observed .- rendered_image, 0, 1)
         errors .+= errormap
     end
@@ -150,6 +151,20 @@ function observed_color_hist(trace)
     color_hist = color_hist / sum(color_hist)
     return color_hist
 end
+
+
+@gen function data_driven_proposal(trace::Gen.DynamicDSLTrace)
+    scene_size, max_fireflies, max_steps = get_args(trace)
+    old_n_fireflies = trace[:init => :n_fireflies]
+    n_fireflies = {:init => :n_fireflies} ~ uniform_discrete(max(1, old_n_fireflies - 1), min(old_n_fireflies + 1, max_fireflies))
+    states, _ = get_retval(trace)
+
+    recon_errors = average_reconstruction_error(trace)
+    low_likelihood_x, low_likelihood_y = find_low_likelihood_regions(recon_errors) 
+    color_hist = observed_color_hist(trace)
+    
+
+end    
 
 @gen function proposal(trace::Gen.DynamicDSLTrace)
     scene_size, max_fireflies, max_steps = get_args(trace)

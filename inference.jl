@@ -4,86 +4,6 @@ include("./mcmc.jl")
 include("./visualizations.jl")
 include("./utilities.jl")
 
-function get_traced_variable_observation(trace; step)
-    args = get_args(trace)
-    choices = get_choices(trace)
-    n_fireflies = choices[:n_fireflies]
-
-    observations = []
-    chm = Gen.choicemap()
-
-    for n in 1:n_fireflies
-        blinking = choices[(:blinking, n, step)]
-        if blinking == 1
-            x = choices[(:x, n, step)]
-            y = choices[(:y, n, step)]
-            color = choices[(:color, n)]
-            chm[(:x, n, step)] = Int(trunc(x))
-            chm[(:y, n, step)] = Int(trunc(y))
-            chm[(:blinking, n, step)] = 1
-        
-            # If you haven't seen this firefly before, log the color
-            first_obs = true
-            for t in 1:step
-                if choices[(:blinking, n, t)] == 1 && t < step
-                    first_obs = false
-                    break
-                end
-            end
-            # if first_obs
-            #     chm[(:color, n)] = color
-            # end
-        end
-    end
-
-    return chm
-end
-
-function observe_at_time(trace, step)
-    args = get_args(trace)
-    scene_size = args[1]
-    pixels = zeros(Int, scene_size, scene_size)
-    choices = get_choices(trace)
-    #var = 0.001
-    #noise = normal.(zeros(scene_size, scene_size), var)
-    chm = choicemap()
-    for x in 1:scene_size
-        for y in 1:scene_size
-            chm[(:pixels, step, x, y)] = Base.clamp.(choices[(:pixels, step, x, y)], 0., 1.)
-        end
-    end
-    
-    return chm
-end
-
-
-"""
-The default proposal doesn't work under the current model because of how fireflies are indexed.
-If a particle's originally estimates :n_fireflies = 1, and then gets an observation indexing a firefly with n > 1,
-the update step will be unable to constrain the observation of (:pos, n>1, t) and will fail.
-"""
-@gen function particle_filter_default_proposal(trace, model, num_particles::Int, num_samples::Int)
-    scene_size, steps, max_fireflies = get_args(trace)
-    init_obs = observe_at_time(trace, 1)
-    state = Gen.initialize_particle_filter(model, (scene_size, 1, max_fireflies,), init_obs, num_particles)
-    
-    for t=2:steps
-        println("t=$t")
-        Gen.maybe_resample!(state, ess_threshold=num_particles/2)
-        obs = observe_at_time(trace, t)
-        Gen.particle_filter_step!(state, (scene_size, t, max_fireflies,), (NoChange(), UnknownChange(), NoChange(),), obs)
-    end
-
-    # return a sample of unweighted traces from the weighted collection
-    try 
-        println("Success")
-        return Gen.sample_unweighted_traces(state, num_samples)
-    catch e
-        println("Failed")
-        return state.traces[1:5]
-    end
-end;
-
 function make_record(particle::Gen.DynamicDSLTrace, savedir::String, t::Int64, i::Int64)
     record = Dict()
     particle_state, _ = get_retval(particle)
@@ -98,6 +18,18 @@ function make_record(particle::Gen.DynamicDSLTrace, savedir::String, t::Int64, i
     record["rendered_img"] = save_path
     save(save_path, rendered_img)
     return record
+end
+
+@gen function init_proposal(trace::Gen.DynamicDSLTrace, num_samples::Int)
+    # Use importance sampling to initialize particle distribution
+    scene_size, max_fireflies, steps = get_args(trace)
+    _, observations = get_retval(trace)
+    obs = get_choices(trace)[:observations => 1]
+    chm = choicemap()
+    chm[:observations=>1] = observations[1, :, :, :]
+    observed_colors = StatsBase.mean(obs; dims=[2,3])[1, :, :]
+    observed_colors = observed_colors ./ sum(observed_colors)
+    
 end
 
 function smc(trace::Gen.DynamicDSLTrace, model::Gen.DynamicDSLFunction, num_particles::Int, num_samples::Int; record_json=true, experiment_tag="")
@@ -136,18 +68,17 @@ function smc(trace::Gen.DynamicDSLTrace, model::Gen.DynamicDSLFunction, num_part
     for t=2:steps
         # write out observation and save filepath name
         # record all the particle traces at time t - 1
-        print(".")
     
         obs = get_choices(trace)[:observations => t]
         chm = choicemap()
         chm[:observations => t] = observations[t, :, :, :]
 
-        Gen.maybe_resample!(state, ess_threshold=num_particles/2)
+        resampled = Gen.maybe_resample!(state, ess_threshold=num_samples / 2)
         Gen.particle_filter_step!(state, (scene_size, max_fireflies, t,), (NoChange(), UnknownChange(), NoChange(),), chm)
-
+        
         # mh_block_rejuvenation(state, t, obs)
         # data_driven_mcmc(state, obs, t, 10)
-        # mcmc_prior_rejuvenation(state, 1)
+        mcmc_prior_rejuvenation(state, 1)
 
         if record_json
             particles = sample_unweighted_traces(state, 10)

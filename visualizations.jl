@@ -206,7 +206,7 @@ Rewrite more composable functions for plotting traces and observations:
 function animate_observations(frames; fps=10)
     n_frames, _, x_size, y_size = size(frames)
     if frames isa Array
-        frames = [mat_to_img(frames[i, :, :, :]) for i in 1:n_frames]
+        frames = [frames[i, :, :, :] for i in 1:n_frames]
     end
     
     fig = plot()
@@ -237,10 +237,10 @@ function visualize_particles(particles, gt_trace)
     gt_states, gt_observations = get_retval(gt_trace)
     gt_n_fireflies = get_choices(gt_trace)[:init=>:n_fireflies]
     num_particles = length(particles)
-
-    fig = plot(layout=grid(1, num_particles + 1), background_color=RGB(0, 0, 0), showaxis=true, ticks=false, aspect_ratio=:equal)
+    
+    fig = plot(layout=(2, floor(Int, num_particles//2) + 1), background_color=RGB(0, 0, 0), showaxis=true, ticks=false)
     gr()
-    println("current steps: ", current_steps, ", gt steps: ", steps)
+
     anim = @animate for t in 1:current_steps
         empty!(fig[1])
         xlims!(0, scene_size + 1)
@@ -252,13 +252,16 @@ function visualize_particles(particles, gt_trace)
             color = gt_states[:colors][n]
             blinking = gt_states[:blinking_states][n, t]
             if blinking == 1
-                scatter!(fig[1], [x], [y], color=color, markersize=4, label=nothing, aspect_ratio=:equal)
+                scatter!(fig[1], [x], [y], color=color, markersize=4, label=nothing, title="Ground Truth", 
+                titlefontsize=10, title_position=:center, 
+                xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal)
             else 
-                scatter!(fig[1], [x], [y], color=color, markersize=4, label=nothing, markershape=:x, aspect_ratio=:equal)
+                scatter!(fig[1], [x], [y], color=color, markersize=4, label=nothing, markershape=:x,
+                xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal)
             end
             if t > 1
                 # Draw trajectory after first time step
-                plot!(fig[1], gt_states[:xs][n, 1:t], gt_states[:ys][n, 1:t], color=color, label=nothing, aspect_ratio=:equal)
+                plot!(fig[1], gt_states[:xs][n, 1:t], gt_states[:ys][n, 1:t], color=color, label=nothing)
             end
         end
 
@@ -276,12 +279,14 @@ function visualize_particles(particles, gt_trace)
                 color = states[p][:colors][n]
                 blinking = states[p][:blinking_states][n, t]
                 if blinking == 1
-                    scatter!(fig[p + 1], [x], [y], color=color, markersize=4, label=nothing, aspect_ratio=:equal)
+                    scatter!(fig[p + 1], [x], [y], color=color, markersize=4, label=nothing, 
+                    xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal)
                 else 
-                    scatter!(fig[p + 1], [x], [y], color=color, markersize=4, label=nothing, markershape=:x, aspect_ratio=:equal)
+                    scatter!(fig[p + 1], [x], [y], color=color, markersize=4, label=nothing, markershape=:x, 
+                    xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal)
                 end
                 if t > 1
-                    plot!(fig[p + 1], states[p][:xs][n, 1:t], states[p][:ys][n, 1:t], color=color, label=nothing, aspect_ratio=:equal)
+                    plot!(fig[p + 1], states[p][:xs][n, 1:t], states[p][:ys][n, 1:t], color=color, label=nothing)
                 end
             end
         end

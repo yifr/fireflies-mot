@@ -20,13 +20,12 @@ include("./inference.jl")
 # end
 
 
-
 # pure runtime
-function test_model(scene_size, max_fireflies, steps; experiment_tag="")
+function test_model(scene_size, max_fireflies, steps; num_particles=20, experiment_tag="")
     trace = simulate(model, (scene_size, max_fireflies, steps))
-    inferred_traces = smc(trace, model, 20, 10; record_json=true, experiment_tag=experiment_tag)
+    inferred_traces = smc(trace, model, num_particles, 10; record_json=true, experiment_tag=experiment_tag)
 
     return trace, inferred_traces;
 end
 
-# test_model(64, 10, 20)
+# test_model(32, 10, 20)
