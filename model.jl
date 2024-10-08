@@ -137,11 +137,11 @@ function add_firefly_glow!(pixels, x_loc, y_loc, x_sigma, y_sigma, color)
         for j in ymin:ymax
             # dy2 = (j - y_loc)^2
             # alpha = exp(x_factor * dx2 + y_factor * dy2) 
-            alpha = 0.95
+            alpha = 1
             #if alpha > 0.01
-            @inbounds pixels[1, j, i] += r * alpha
-            @inbounds pixels[2, j, i] += g * alpha
-            @inbounds pixels[3, j, i] += b * alpha
+            @inbounds pixels[1, j, i] = r * alpha
+            @inbounds pixels[2, j, i] = g * alpha
+            @inbounds pixels[3, j, i] = b * alpha
             #end
         end
     end
@@ -167,7 +167,7 @@ function render!(states::NamedTuple, step::Int64, scene_size::Int64)
         color = colors[n]
         blinking = blinking_states[n, step]
         if blinking == 1
-            pixels += add_firefly_glow!(pixels, x, y, sigma_x, sigma_y, color)
+            pixels = add_firefly_glow!(pixels, x, y, sigma_x, sigma_y, color)
         end
     end
     
