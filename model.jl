@@ -43,8 +43,8 @@ const FIREFLY_COLORS::Vector{Tuple{Float64, Float64, Float64}} = [(1., 0.3, 0.3)
     ys = zeros(Float64, n_fireflies, steps)
     vxs = ones(Float64, n_fireflies, steps)
     vys = ones(Float64, n_fireflies, steps)
-    motion_var_x = 0.5
-    motion_var_y = 0.5
+    motion_var_x = 0.1
+    motion_var_y = 0.1
     sigma_x = 1.
     sigma_y = 1.
     colors = zeros(Int, n_fireflies)
@@ -53,7 +53,7 @@ const FIREFLY_COLORS::Vector{Tuple{Float64, Float64, Float64}} = [(1., 0.3, 0.3)
 
     for n in 1:n_fireflies
         color = {:color => n} ~ uniform_discrete(1, 3)
-        blink_rate = {:blink_rate => n} ~ uniform(0.99, 0.995)
+        blink_rate = {:blink_rate => n} ~ uniform(0.999, 0.9999)
         colors[n] = color
         blink_rates[n] = blink_rate
         init_x = {:init_x => n} ~ uniform_discrete(1, scene_size - 1)
@@ -102,8 +102,8 @@ end
         end
 
         # Update position
-        x = {:x => n} ~ trunc_norm(prev_x + vx, 0.5, 1., Float64(scene_size))
-        y = {:y => n} ~ trunc_norm(prev_y + vy, 0.5, 1., Float64(scene_size))
+        x = {:x => n} ~ trunc_norm(prev_x + vx, 0.01, 1., Float64(scene_size))
+        y = {:y => n} ~ trunc_norm(prev_y + vy, 0.01, 1., Float64(scene_size))
 
         # Update blinking
         blinking = {:blinking => n} ~ bernoulli(blink_rate)

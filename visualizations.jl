@@ -144,7 +144,7 @@ function visualize_inference(gt_trace, inferred_traces, steps; firefly_size=4)
     gt_xs = retvals["xs"]
     gt_ys = retvals["ys"]
     blinks = retvals["blinking"]
-    
+    color_opts = [RGB(1, 0, 0), RGB(0, 1, 0), RGB(0, 0, 1)]
     # Plot trajectories from inferred traces
     fig = plot(layout=grid(1, 2), size=(800, 400), background_color=RGB(0, 0, 0), showaxis=true, ticks=false)
     anim = Plots.@animate for t in 1:steps 
@@ -153,15 +153,16 @@ function visualize_inference(gt_trace, inferred_traces, steps; firefly_size=4)
         empty!(fig[2])
         # plot ground truth location
         for n in 1:get_choices(gt_trace)[:n_fireflies]
-            color = Int(firefly_hues[n])
+            color_opt = Int(firefly_hues[n])
+            color = color_opts[color_opt]
             blinking = Int(blinks[n, t])
             gt_x = gt_choices[(:x, n, t)]
             gt_y = gt_choices[(:y, n, t)]
             # plot!(fig[1], xs[n, 1:t], ys[n, 1:t], color=color, markersize=firefly_size, label=nothing)
             if blinking == 1
-                scatter!(fig[1], [gt_x], [gt_y], color=color, markersize=firefly_size, markershape=:circle, label=nothing, xlims=(0, scene_size), ylims=(0, scene_size))
+                scatter!(fig[1], [gt_x], [gt_y], color=color, markersize=firefly_size, markershape=:circle, label=nothing, xlims=(0, scene_size), ylims=(0, scene_size), yflip=true)
             else
-                scatter!(fig[1], [gt_x], [gt_y], color=color, markersize=firefly_size, label=nothing, markershape=:x, xlims=(0, scene_size), ylims=(0, scene_size))
+                scatter!(fig[1], [gt_x], [gt_y], color=color, markersize=firefly_size, label=nothing, markershape=:x, xlims=(0, scene_size), ylims=(0, scene_size), yflip=true)
             end
         end
 
@@ -174,9 +175,9 @@ function visualize_inference(gt_trace, inferred_traces, steps; firefly_size=4)
                 # plot!(fig[2], xs, ys color=color, markersize=firefly_size, label=nothing)
                 blinking = get_choices(trace)[(:blinking, n, t)]
                 if blinking == 1
-                    scatter!(fig[2], [xs], [ys], color=color, markersize=firefly_size, label=nothing, xlims=(0, scene_size), ylims=(0, scene_size))
+                    scatter!(fig[2], [xs], [ys], color=color, markersize=firefly_size, label=nothing, xlims=(0, scene_size), ylims=(0, scene_size), yflip=true)
                 else
-                    scatter!(fig[2], [xs], [ys], color=color, markersize=firefly_size, label=nothing, markershape=:x, xlims=(0, scene_size), ylims=(0, scene_size))
+                    scatter!(fig[2], [xs], [ys], color=color, markersize=firefly_size, label=nothing, markershape=:x, xlims=(0, scene_size), ylims=(0, scene_size), yflip=true)
                 end
             end
         end
@@ -249,26 +250,27 @@ function visualize_particles(particles, gt_trace)
         for n in 1:gt_n_fireflies
             x = gt_states[:xs][n, t]
             y = gt_states[:ys][n, t]
-            color = gt_states[:colors][n]
+            color_opt = gt_states[:colors][n]
+            color = ["red", "green", "blue"][color_opt]
             blinking = gt_states[:blinking_states][n, t]
             if blinking == 1
                 scatter!(fig[1], [x], [y], color=color, markersize=4, label=nothing, title="Ground Truth", 
                 titlefontsize=10, title_position=:center, 
-                xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal)
+                xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal, yflip=true)
             else 
                 scatter!(fig[1], [x], [y], color=color, markersize=4, label=nothing, markershape=:x,
-                xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal)
+                xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal, yflip=true)
             end
             if t > 1
                 # Draw trajectory after first time step
-                plot!(fig[1], gt_states[:xs][n, 1:t], gt_states[:ys][n, 1:t], color=color, label=nothing)
+                plot!(fig[1], gt_states[:xs][n, 1:t], gt_states[:ys][n, 1:t], color=color, label=nothing, yflip=true)
             end
         end
 
         # Get states for each particle and plot
         states = [get_retval(particle)[1] for particle in particles]
         for p in 1:num_particles
-            empty!(fig[p + 1])
+            empty!(fig[2])
             xlims!(0, scene_size + 1)
             ylims!(0, scene_size + 1)
             n_fireflies = get_choices(particles[p])[:init=>:n_fireflies]
@@ -276,17 +278,105 @@ function visualize_particles(particles, gt_trace)
             for n in 1:n_fireflies
                 x = states[p][:xs][n, t]
                 y = states[p][:ys][n, t]
-                color = states[p][:colors][n]
+                color_opt = states[p][:colors][n]
+                color = ["red", "green", "blue"][color_opt]
                 blinking = states[p][:blinking_states][n, t]
                 if blinking == 1
-                    scatter!(fig[p + 1], [x], [y], color=color, markersize=4, label=nothing, 
-                    xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal)
+                    scatter!(fig[2], [x], [y], color=color, markersize=4, label=nothing, 
+                    xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal, yflip=true)
                 else 
-                    scatter!(fig[p + 1], [x], [y], color=color, markersize=4, label=nothing, markershape=:x, 
-                    xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal)
+                    scatter!(fig[2], [x], [y], color=color, markersize=4, label=nothing, markershape=:x, 
+                    xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal, yflip=true)
                 end
                 if t > 1
-                    plot!(fig[p + 1], states[p][:xs][n, 1:t], states[p][:ys][n, 1:t], color=color, label=nothing)
+                    plot!(fig[2], states[p][:xs][n, 1:t], states[p][:ys][n, 1:t], color=color, label=nothing, yflip=true)
+                end
+            end
+        end
+    end
+    return anim
+end
+
+
+function visualize_particles_over_time(particles_over_time, gt_trace)
+    """
+    particles_over_time: t x n_particles vector
+        - At each step we want to plot the final state of each particle, since that's 
+          the prediction at that time step
+    """
+
+    scene_size, max_fireflies, steps = get_args(gt_trace)
+    gt_states, gt_observations = get_retval(gt_trace)
+    gt_n_fireflies = get_choices(gt_trace)[:init=>:n_fireflies]
+    num_particles = length(particles_over_time[1])
+    
+    fig = plot(layout=(1, 2), background_color=RGB(0, 0, 0), showaxis=true, ticks=false)
+    gr()
+        
+    anim = @animate for t in 1:steps
+        empty!(fig[1])
+        empty!(fig[2])
+
+        xlims!(0, scene_size + 1)
+        ylims!(0, scene_size + 1)
+        # Plot ground truth states
+        for n in 1:gt_n_fireflies
+            x = gt_states[:xs][n, t]
+            y = gt_states[:ys][n, t]
+            color_opt = gt_states[:colors][n]
+            color = ["red", "green", "blue"][color_opt]
+            blinking = gt_states[:blinking_states][n, t]
+            if blinking == 1
+                scatter!(fig[1], [x], [y], color=color, markersize=4, label=nothing, title="GT", 
+                titlefontsize=10, title_position=:center, 
+                xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal, yflip=true)
+            else 
+                scatter!(fig[1], [x], [y], color=color, markersize=4, label=nothing, markershape=:x,
+                xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal, yflip=true)
+            end
+            if t > 1
+                # Draw trajectory after first time step
+                plot!(fig[1], gt_states[:xs][n, 1:t], gt_states[:ys][n, 1:t], color=color, label=nothing, yflip=true)
+            end
+        end
+
+        # Get states for each particle and plot
+        particles = particles_over_time[t]
+        n_particles = length(particles)
+        states = [get_retval(particle)[1] for particle in particles]        
+
+        scores = [get_score(particle) for particle in particles]
+        scores = max.(scores ./ sum(scores), 1)
+
+        xlims!(0, scene_size + 1)
+        ylims!(0, scene_size + 1)
+
+        for p in 1:num_particles
+            particle = particles[p]
+            choices = get_choices(particle)
+            n_fireflies = choices[:init=>:n_fireflies]
+            score = scores[p]
+            for n in 1:n_fireflies
+                x = states[p][:xs][n, t]
+                y = states[p][:ys][n, t]
+                color_opt = states[p][:colors][n]
+                color = ["red", "green", "blue"][color_opt]
+                blinking = choices[:states => t => :blinking => n]
+                if isnan(score)
+                    score = 1/num_particles
+                end
+                if blinking == 1
+                    scatter!(fig[2], [x], [y], color=color, markersize=4, label=nothing, 
+                    xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal, title=t, yflip=true,
+                    alpha=score)
+                else 
+                    scatter!(fig[2], [x], [y], color=color, markersize=4, label=nothing, markershape=:x, 
+                    xlims=(0, scene_size), ylims=(0, scene_size), aspect_ratio=:equal, title=t, yflip=true,
+                    alpha=score)
+                end
+                if t > 1
+                    plot!(fig[2], states[p][:xs][n, 1:t], states[p][:ys][n, 1:t], color=color, label=nothing, yflip=true,
+                    alpha=score)
                 end
             end
         end
