@@ -186,23 +186,33 @@ function visualize_inference(gt_trace, inferred_traces, steps; firefly_size=4)
 
 end
 
-"""
-Visualization ToDos:
-
-Rewrite more composable functions for plotting traces and observations:
-
-    - animate(frames, save_path) 
-        --> animates a list of frames and saves to a path
-
-    - plot_trace(trace, step; start_step=1, figure=nothing, panel=1) 
-        --> plots a trace up until a given step, or overlays a trace on a figure (optionally on a specified pane) if provided
-
-    - plot_observations(trace, step; start_step=1, figure=nothing, panel=1) 
-        --> plots observation up until a given step, or overlays on a figure (optionally on a specified pane) if provided
-
-    - overlay_ground_truth(trace, figure, step)
-        --> Adds ground truth with different markers to a figure
-"""
+function animate_trace(trace)
+    choices = get_choices(trace)
+    scene_size, max_fireflies, steps = get_args(trace)
+    frames = [mat_to_img(choices[:observations => t]) for t in range(1, steps)]
+    y_size = size(frames[1])[1]
+    x_size = size(frames[1])[2]
+    fig = plot()
+    n_fireflies = choices[:init => :n_fireflies]
+    anim = Plots.@animate for t in range(1, steps)
+        empty!(fig)
+        frame = frames[t]
+        heatmap!(fig, frame, xlims=(0, x_size + 1), ylims=(0, y_size + 1), yflip=true, background_color=:black, axis=false, grid=false)
+        for n in 1:n_fireflies
+            gt_x = choices[:states => t => :x => n]
+            gt_y = choices[:states => t => :y => n]
+            color_opt = choices[:init => :color => n]
+            color = ["red", "green", "blue"][color_opt]
+            blinking = choices[:states => t => :blinking => n]
+            if blinking == 1
+                scatter!(fig, [gt_x], [gt_y], color=color, markersize=4, markershape=:circle, label=nothing)
+            else
+                scatter!(fig, [gt_x], [gt_y], color=color, markersize=4, markershape=:x, label=nothing)
+            end
+        end
+    end
+    return anim
+end
 
 function animate_observations(frames; fps=10)
     n_frames, _, x_size, y_size = size(frames)
@@ -346,7 +356,8 @@ function visualize_particles_over_time(particles_over_time, gt_trace)
         states = [get_retval(particle)[1] for particle in particles]        
 
         scores = [get_score(particle) for particle in particles]
-        scores = max.(scores ./ sum(scores), 1)
+        scores = scores ./ sum(scores) # normalize
+        scores = max.(scores, 0.1)
 
         xlims!(0, scene_size + 1)
         ylims!(0, scene_size + 1)
@@ -363,6 +374,7 @@ function visualize_particles_over_time(particles_over_time, gt_trace)
                 color = ["red", "green", "blue"][color_opt]
                 blinking = choices[:states => t => :blinking => n]
                 if isnan(score)
+                    println("Score is NaN")
                     score = 1/num_particles
                 end
                 if blinking == 1
