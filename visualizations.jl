@@ -1,6 +1,6 @@
 using Gen
 using Plots, Images
-# include("./model.jl")
+include("./model.jl")
 include("./utilities.jl")
 
 function plot_multiple_fireflies(trace; plot_ground_truth=true, firefly_size=4)
@@ -308,7 +308,7 @@ function visualize_particles(particles, gt_trace)
 end
 
 
-function visualize_particles_over_time(particles_over_time, gt_trace)
+function visualize_particles_over_time(particles_over_time, gt_trace; visualize_gt_obs=true, visualize_particle_obs=false)
     """
     particles_over_time: t x n_particles vector
         - At each step we want to plot the final state of each particle, since that's 
@@ -329,6 +329,11 @@ function visualize_particles_over_time(particles_over_time, gt_trace)
 
         xlims!(0, scene_size + 1)
         ylims!(0, scene_size + 1)
+
+        if visualize_gt_obs
+            obs = mat_to_img(gt_observations[t, :, :, :])
+            heatmap!(fig[1], obs, yflip=true, xlims=(0, scene_size), ylims=(0, scene_size))
+        end
         # Plot ground truth states
         for n in 1:gt_n_fireflies
             x = gt_states[:xs][n, t]
@@ -356,8 +361,7 @@ function visualize_particles_over_time(particles_over_time, gt_trace)
         states = [get_retval(particle)[1] for particle in particles]        
 
         scores = [get_score(particle) for particle in particles]
-        scores = scores ./ sum(scores) # normalize
-        scores = max.(scores, 0.1)
+        scores = max.(scores ./ sum(scores), 0.1) # normalize and threshold for scoring
 
         xlims!(0, scene_size + 1)
         ylims!(0, scene_size + 1)
@@ -367,6 +371,10 @@ function visualize_particles_over_time(particles_over_time, gt_trace)
             choices = get_choices(particle)
             n_fireflies = choices[:init=>:n_fireflies]
             score = scores[p]
+            if visualize_particle_obs
+                rendered = mat_to_img(render!(states[p], t, scene_size))
+                heatmap!(fig[2], rendered, xlims=(0, scene_size), ylims=(0, scene_size), yflip=true, alpha=score)
+            end
             for n in 1:n_fireflies
                 x = states[p][:xs][n, t]
                 y = states[p][:ys][n, t]
