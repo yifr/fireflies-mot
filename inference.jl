@@ -1,3 +1,6 @@
+module FireflyInference
+export smc
+
 using Gen
 using JSON
 using Hungarian
@@ -34,7 +37,7 @@ function make_record(particle::Gen.DynamicDSLTrace, savedir::String, t::Int64, i
     return record
 end
 
-function find_color_patches(image::Array{Float64,3}, threshold::Float64, size_prior::Int, color_threshold::Float64)
+function find_color_patches(image::Array{Float64,3}, threshold::Float64, size_prior::Int, luminance_threshold::Float64)
     height, width = size(image, 2), size(image, 3)
     visited = zeros(Int, height, width)
     patches = []
@@ -55,7 +58,7 @@ function find_color_patches(image::Array{Float64,3}, threshold::Float64, size_pr
             pixel_color = image[:, cy, cx]
 
             # Luminance filter and color filter
-            if maximum(pixel_color) <= threshold || norm(pixel_color - initial_color) > color_threshold
+            if maximum(pixel_color) <= threshold || norm(pixel_color - initial_color) > luminance_threshold
                 continue
             end
 
@@ -110,7 +113,7 @@ function find_color_patches(image::Array{Float64,3}, threshold::Float64, size_pr
     return patches, length(patches)
 end
 
-@gen function detection_proposal(max_fireflies::Int, img_array::Array{Float64,3}, step::Int)
+@gen function init_proposal(max_fireflies::Int, img_array::Array{Float64,3}, step::Int)
     #scene_size, max_fireflies, _ = get_args(prev_trace)
     scene_size = size(img_array)[2]
     
@@ -119,8 +122,8 @@ end
 
     threshold = 0.2 # Luminance threshold
     size_prior = 30 # size prior for splitting patches
-    color_threshold = 0.7 # color matching threshold
-    patch_info, num_clusters = find_color_patches(img_array, threshold, size_prior, color_threshold)
+    luminance_threshold = 0.7 # color matching threshold
+    patch_info, num_clusters = find_color_patches(img_array, threshold, size_prior, luminance_threshold)
 
     # For each cluster, find closest previous firefly of matching color
     # Update position accordingly
@@ -128,9 +131,9 @@ end
         patch = patch_info[n]
         patch_index = uniform_discrete(1, length(patch))
 
-        x_opts = ones(scene_size) .* 0.001
-        y_opts = ones(scene_size) .* 0.001
-        color_opts = ones(3) .* 0.001
+        x_opts = ones(scene_size) .* 0.0001
+        y_opts = ones(scene_size) .* 0.0001
+        color_opts = ones(3) .* 0.0001
         color_opts[patch[patch_index][3]] = 1
 
         # Upweight x and y coordinates
@@ -149,17 +152,25 @@ end
         x = {:states => step => :x => n} ~ categorical(x_opts)
         y = {:states => step => :y => n} ~ categorical(y_opts)
 
-        if step == 1
-            init_x = {:init => :init_x => n} ~ categorical(x_opts)
-            init_y = {:init => :init_y => n} ~ categorical(x_opts)
-            color = {:init => :color => n} ~ categorical(color_opts)
-        end
+        init_x = {:init => :init_x => n} ~ categorical(x_opts)
+        init_y = {:init => :init_y => n} ~ categorical(x_opts)
+        color = {:init => :color => n} ~ categorical(color_opts)
+
+        # Upweight blinking
+        blinking = {:states => step => :blinking => n} ~ bernoulli(0.9)
     end
     
-    n_firefly_probs = ones(max_fireflies) .* 0.001
-    n_firefly_probs[num_clusters] = 1
+    # encode prior that there are at least as many fireflies as clusters
+    # but possibly more
+    n_firefly_probs = ones(max_fireflies) 
+    n_firefly_probs[1:num_clusters] .= 0.1
     n_firefly_probs = n_firefly_probs ./ sum(n_firefly_probs)
     n_fireflies = {:init => :n_fireflies} ~ categorical(n_firefly_probs)
+
+    # Any excess fireflies are probably not blinking
+    for n in num_clusters + 1 : max_fireflies
+        blinking = {:states => step => :blinking => n} ~ bernoulli(0.1)
+    end
 end
 
 @gen function step_proposal(prev_trace, observation::Array{Float64,3}, step::Int)
@@ -170,13 +181,15 @@ end
     scene_size = 64
     threshold = 0.2 # Luminance threshold
     size_prior = 30 # size prior for splitting patches
-    color_threshold = 0.7 # color matching threshold
-    patch_info, num_clusters = find_color_patches(observation, threshold, size_prior, color_threshold)
+    luminance_threshold = 0.7 # color matching threshold
+
+    prev_choices = get_choices(prev_trace)
+    n_fireflies = prev_choices[:init => :n_fireflies]
+
+    patch_info, num_clusters = find_color_patches(observation, threshold, size_prior, luminance_threshold)
 
     # For each cluster, find closest previous firefly of matching color
     # Update position and velocity accordingly
-    prev_choices = get_choices(prev_trace)
-    n_fireflies = prev_choices[:init => :n_fireflies]
     
     # Compute optimal assignment using hungarian algorithm
     cost_matrix = zeros(Float64, n_fireflies, num_clusters)
@@ -188,43 +201,49 @@ end
     for n in 1:n_fireflies
         for k in 1:num_clusters
             patch = patch_info[k][patch_indices[k]]
-            cost_matrix[n, k] = norm([prev_choices[:states => step - 1 => :x => n] - patch[1],
-                                      prev_choices[:states => step - 1 => :y => n] - patch[2]])
+            # Compute cost as normalized distance between x,y, and color. 
+            # If the distance is greater than the firefly could have moved in one or two steps, 
+            # the cost is set to infinity
+            prev_x = prev_choices[:states => step - 1 => :x => n]
+            prev_y = prev_choices[:states => step - 1 => :y => n]
+            l2_dist = norm([prev_x - patch[1], prev_y - patch[2]])
+
+            vx_limit = (prev_choices[:states => step - 1 => :vx => n])
+            vy_limit = (prev_choices[:states => step - 1 => :vy => n])
+            if l2_dist > 2 * sqrt(vx_limit^2 + vy_limit^2)
+                cost_matrix[n, k] = Inf
+                continue
+            end
+
+            # Check color match
+            color = prev_choices[:init => :color => n]
+            if color != patch[3]
+                cost_matrix[n, k] = Inf
+                continue
+            end
+
+            cost_matrix[n, k] = l2_dist
         end
     end
     
     assignments, cost = Hungarian.hungarian(cost_matrix)
-    
-    new_xs = zeros(Float64, n_fireflies)
-    new_ys = zeros(Float64, n_fireflies)
     for n in 1:n_fireflies
         k = assignments[n]
-        if k != 0  # Check if the firefly is assigned to a cluster
+        if k != 0 && cost_matrix[n, k] != Inf # Check if the firefly is assigned to a cluster
             patch = patch_info[k][patch_indices[k]]
-            x = Float64(patch[1])
-            y = Float64(patch[2])
-            x = {:states => step => :x => n} ~ trunc_norm(x, 0.5, 1., Float64(scene_size))
-            y = {:states => step => :y => n} ~ trunc_norm(y, 0.5, 1., Float64(scene_size))
-        else
-            prev_vx = prev_choices[:states => step - 1 => :vx => n]
-            prev_vy = prev_choices[:states => step - 1 => :vy => n]
-            x = Float64(prev_choices[:states => step - 1 => :x => n])
-            y = Float64(prev_choices[:states => step - 1 => :y => n])
-            x = {:states => step => :x => n} ~ trunc_norm(x + prev_vx, 0.1, 1., Float64(scene_size))
-            y = {:states => step => :y => n} ~ trunc_norm(y + prev_vy, 0.1, 1., Float64(scene_size))
-        end
-        new_xs[n] = x
-        new_ys[n] = y
-    end
+            obs_x = Float64(patch[1])
+            obs_y = Float64(patch[2])
+            x = {:states => step => :x => n} ~ trunc_norm(obs_x, 0.25, 1., Float64(scene_size))
+            y = {:states => step => :y => n} ~ trunc_norm(obs_y, 0.25, 1., Float64(scene_size))
 
-    #Update velocities to match 
-    for n in 1:n_fireflies
-        prev_x = prev_choices[:states => step - 1 => :x => n]
-        prev_y = prev_choices[:states => step - 1 => :y => n]
-        x = new_xs[n]
-        y = new_ys[n]
-        vx = {:states => step => :vx => n} ~ trunc_norm(x - prev_x, 0.1, -3., 3.)
-        vy = {:states => step => :vy => n} ~ trunc_norm(y - prev_y, 0.1, -3., 3.)
+            prev_x = prev_choices[:states => step - 1 => :x => n]
+            prev_y = prev_choices[:states => step - 1 => :y => n]
+            vx = {:states => step => :vx => n} ~ trunc_norm(x - prev_x, 0.1, -3., 3.)
+            vy = {:states => step => :vy => n} ~ trunc_norm(y - prev_y, 0.1, -3., 3.)
+            blinking = {:states => step => :blinking => n} ~ bernoulli(0.9)
+        else 
+            blinking = {:states => step => :blinking => n} ~ bernoulli(0.01)
+        end
     end
 end 
 
@@ -238,11 +257,11 @@ function smc(trace::Gen.DynamicDSLTrace, model::Gen.DynamicDSLFunction, num_part
     chm[:observations=>1] = obs
 
     state = Gen.initialize_particle_filter(model, (scene_size, max_fireflies, 1), chm,
-        detection_proposal, (max_fireflies, obs, 1,), num_particles)
+        init_proposal, (max_fireflies, obs, 1,), num_particles)
 
     intermediate_traces = []
     if return_intermediate_traces
-        particles = state.traces #sample_unweighted_traces(state, num_samples)
+        particles = copy(state.traces) #sample_unweighted_traces(state, num_samples)
         push!(intermediate_traces, particles)
     end
     
@@ -292,7 +311,7 @@ function smc(trace::Gen.DynamicDSLTrace, model::Gen.DynamicDSLFunction, num_part
         # data_driven_mcmc(state, obs, t, 10)
         # mcmc_prior_rejuvenation(state, 1)
         if return_intermediate_traces
-            particles = state.traces #sample_unweighted_traces(state, num_samples)
+            particles = copy(state.traces) #sample_unweighted_traces(state, num_samples)
             push!(intermediate_traces, particles)
         end
 
@@ -322,3 +341,5 @@ function smc(trace::Gen.DynamicDSLTrace, model::Gen.DynamicDSLFunction, num_part
     end
 end;
 
+
+end
