@@ -125,52 +125,47 @@ end
     luminance_threshold = 0.7 # color matching threshold
     patch_info, num_clusters = find_color_patches(img_array, threshold, size_prior, luminance_threshold)
 
+    n_fireflies = {:init => :n_fireflies} ~ uniform_discrete(num_clusters, max_fireflies)
+    
     # For each cluster, find closest previous firefly of matching color
     # Update position accordingly
-    for n in 1:num_clusters
-        patch = patch_info[n]
-        patch_index = uniform_discrete(1, length(patch))
+    for n in 1:n_fireflies
+        if n <= num_clusters
+            patch = patch_info[n]
+            patch_index = uniform_discrete(1, length(patch))
 
-        x_opts = ones(scene_size) .* 0.0001
-        y_opts = ones(scene_size) .* 0.0001
-        color_opts = ones(3) .* 0.0001
-        color_opts[patch[patch_index][3]] = 1
+            x_opts = ones(scene_size) .* 0.0001
+            y_opts = ones(scene_size) .* 0.0001
+            color_opts = ones(3) .* 0.0001
+            color_opts[patch[patch_index][3]] = 1
 
-        # Upweight x and y coordinates
-        for p in patch
-            x_coord = p[1]
-            y_coord = p[2]
-            x_opts[x_coord] += 1
-            y_opts[y_coord] += 1
+            # Upweight x and y coordinates
+            for p in patch
+                x_coord = p[1]
+                y_coord = p[2]
+                x_opts[x_coord] += 1
+                y_opts[y_coord] += 1
+            end
+
+            # Normalize
+            x_opts = x_opts ./ sum(x_opts)
+            y_opts = y_opts ./ sum(y_opts)
+            color_opts = color_opts ./ sum(color_opts)
+
+            x = {:states => step => :x => n} ~ categorical(x_opts)
+            y = {:states => step => :y => n} ~ categorical(y_opts)
+
+            init_x = {:init => :init_x => n} ~ categorical(x_opts)
+            init_y = {:init => :init_y => n} ~ categorical(x_opts)
+            color = {:init => :color => n} ~ categorical(color_opts)
+
+            # Upweight blinking
+            blinking = {:states => step => :blinking => n} ~ bernoulli(0.9)
+        else
+            blinking = {:states => step => :blinking => n} ~ bernoulli(0.01)
         end
-
-        # Normalize
-        x_opts = x_opts ./ sum(x_opts)
-        y_opts = y_opts ./ sum(y_opts)
-        color_opts = color_opts ./ sum(color_opts)
-
-        x = {:states => step => :x => n} ~ categorical(x_opts)
-        y = {:states => step => :y => n} ~ categorical(y_opts)
-
-        init_x = {:init => :init_x => n} ~ categorical(x_opts)
-        init_y = {:init => :init_y => n} ~ categorical(x_opts)
-        color = {:init => :color => n} ~ categorical(color_opts)
-
-        # Upweight blinking
-        blinking = {:states => step => :blinking => n} ~ bernoulli(0.9)
     end
     
-    # encode prior that there are at least as many fireflies as clusters
-    # but possibly more
-    n_firefly_probs = ones(max_fireflies) 
-    n_firefly_probs[1:num_clusters] .= 0.1
-    n_firefly_probs = n_firefly_probs ./ sum(n_firefly_probs)
-    n_fireflies = {:init => :n_fireflies} ~ categorical(n_firefly_probs)
-
-    # Any excess fireflies are probably not blinking
-    for n in num_clusters + 1 : max_fireflies
-        blinking = {:states => step => :blinking => n} ~ bernoulli(0.1)
-    end
 end
 
 @gen function step_proposal(prev_trace, observation::Array{Float64,3}, step::Int)
@@ -192,7 +187,7 @@ end
     # Update position and velocity accordingly
     
     # Compute optimal assignment using hungarian algorithm
-    cost_matrix = zeros(Float64, n_fireflies, num_clusters)
+    cost_matrix = fill(Inf, n_fireflies, num_clusters)
     patch_indices = zeros(Int, num_clusters)
     for k in 1:num_clusters
         patch_indices[k] = uniform_discrete(1, length(patch_info[k]))
@@ -210,26 +205,30 @@ end
 
             vx_limit = (prev_choices[:states => step - 1 => :vx => n])
             vy_limit = (prev_choices[:states => step - 1 => :vy => n])
-            if l2_dist > 2 * sqrt(vx_limit^2 + vy_limit^2)
-                cost_matrix[n, k] = Inf
+            l2_limit = 3 * norm([vx_limit, vy_limit])
+            if l2_dist > l2_limit
                 continue
             end
-
+            
             # Check color match
             color = prev_choices[:init => :color => n]
             if color != patch[3]
-                cost_matrix[n, k] = Inf
                 continue
             end
 
+            if l2_dist == floatmax(Float64)
+                println(l2_dist + " is floatmax??")
+                println("prev_x: ", prev_x, " prev_y: ", prev_y, " patch_x: ", patch[1], " patch_y: ", patch[2])
+            end
             cost_matrix[n, k] = l2_dist
         end
     end
     
     assignments, cost = Hungarian.hungarian(cost_matrix)
+
     for n in 1:n_fireflies
         k = assignments[n]
-        if k != 0 && cost_matrix[n, k] != Inf # Check if the firefly is assigned to a cluster
+        if k != 0 && cost_matrix[n, k] != Inf && cost_matrix[n, k] != floatmax(Float64) # Check if the firefly is assigned to a cluster
             patch = patch_info[k][patch_indices[k]]
             obs_x = Float64(patch[1])
             obs_y = Float64(patch[2])

@@ -362,7 +362,6 @@ function visualize_particles_over_time(particles_over_time, gt_trace; visualize_
 
         scores = [get_score(particle) for particle in particles]
         scores = max.(scores ./ sum(scores), 0.1) # normalize and threshold for scoring
-
         xlims!(0, scene_size + 1)
         ylims!(0, scene_size + 1)
 
@@ -382,8 +381,7 @@ function visualize_particles_over_time(particles_over_time, gt_trace; visualize_
                 color = ["red", "green", "blue"][color_opt]
                 blinking = choices[:states => t => :blinking => n]
                 if isnan(score)
-                    println("Score is NaN")
-                    score = 1/num_particles
+                    score = 0.1
                 end
                 if blinking == 1
                     scatter!(fig[2], [x], [y], color=color, markersize=4, label=nothing, 

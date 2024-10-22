@@ -1,5 +1,6 @@
 using Gen
 using Images
+using Random
 using Distributions
 using Plots
 include("./distribution_utils.jl")
@@ -43,8 +44,8 @@ const FIREFLY_COLORS::Vector{Tuple{Float64, Float64, Float64}} = [(1., 0.3, 0.3)
     ys = zeros(Float64, n_fireflies, steps)
     vxs = ones(Float64, n_fireflies, steps)
     vys = ones(Float64, n_fireflies, steps)
-    motion_var_x = 0.1
-    motion_var_y = 0.1
+    motion_var_x = 0.5
+    motion_var_y = 0.5
     sigma_x = 1.
     sigma_y = 1.
     colors = zeros(Int, n_fireflies)
@@ -53,7 +54,7 @@ const FIREFLY_COLORS::Vector{Tuple{Float64, Float64, Float64}} = [(1., 0.3, 0.3)
 
     for n in 1:n_fireflies
         color = {:color => n} ~ uniform_discrete(1, 3)
-        blink_rate = {:blink_rate => n} ~ uniform(0.999, 0.9999)
+        blink_rate = {:blink_rate => n} ~ uniform(0.8, 0.9)
         colors[n] = color
         blink_rates[n] = blink_rate
         init_x = {:init_x => n} ~ uniform_discrete(1, scene_size - 1)
@@ -174,8 +175,13 @@ function render!(states::NamedTuple, step::Int64, scene_size::Int64)
     return pixels
 end
 
-
 struct ImageLikelihood <: Gen.Distribution{Array} end
+(::ImageLikelihood)(rendered_image, var) = random(ImageLikelihood(), rendered_image, var)
+
+function Gen.random(::ImageLikelihood, rendered_image::Array{Float64, 3}, var::Float64)
+    noise = rand(Distributions.Normal(0, var), size(rendered_image))
+    rendered_image .+ noise
+end
 
 function Gen.logpdf(::ImageLikelihood, observed_image::Array{Float64,3}, rendered_image::Array{Float64,3}, var)
     # precomputing log(var) and assuming mu=0 both give speedups here
@@ -201,14 +207,45 @@ function logpdfmap(::ImageLikelihood, observed_image::Array{Float64,3}, rendered
     heatmap
 end 
 
-function Gen.random(::ImageLikelihood, rendered_image::Array{Float64, 3}, var::Float64)
-    noise = rand(Distributions.Normal(0, var), size(rendered_image))
-    rendered_image .+ noise
-end
-
 const image_likelihood = ImageLikelihood()
-(::ImageLikelihood)(rendered_image, var) = random(ImageLikelihood(), rendered_image, var)
 
+"""
+Soft image likelihood:
+- Sample N pixels
+- Compute (sum_{i,j}p(O_{1:N} | i, j, Z) * p(i, j))^N
+- Return log of this value
+"""
+# struct SoftImageLikelihood <: Gen.Distribution{Array} end
+# (::SoftImageLikelihood)(rendered_image, var) = random(ImageLikelihood(), rendered_image, var)
+# function Gen.logpdf(::SoftImageLikelihood, observed_image::Array{Float64, 3}, rendered_image::Array{Float64, 3}, var::Float64)
+#     # precomputing log(var) and assuming mu=0 both give speedups here
+#     log_var = log(var)
+#     # sample N pixels
+#     scene_size = size(observed_image)[2]
+#     dims = scene_size ^ 2
+#     N = div(dims, 4) # 25% of pixels
+
+#     x_indices = rand(1:scene_size, N)
+#     y_indices = rand(1:scene_size, N)
+#     logpdf = 0.0
+#     for i in 1:N
+#         x = x_indices[i]
+#         y = y_indices[i]
+#         for ci in 1:3
+#             diff = observed_image[ci, y, x] - rendered_image[ci, y, x]
+#             logpdf += (-0.5 * (diff^2/var + log(2 * pi)) - log_var) 
+#         end
+#     end
+
+#     logpdf
+# end
+
+# function Gen.random(::SoftImageLikelihood, rendered_image::Array{Float64, 3}, var::Float64)    
+#     noise = rand(Distributions.Normal(0, var), size(rendered_image))
+#     rendered_image .+ noise
+# end
+
+# const soft_image_likelihood = SoftImageLikelihood()
 
 @gen function model(scene_size::Int64, max_fireflies::Int64, steps::Int64)
     """
