@@ -5,6 +5,7 @@ using Combinatorics
 include("./utilities.jl")
 include("./model.jl")
 include("./distribution_utils.jl")
+include("./detection.jl")
 
 function run_mh(particles::Gen.ParticleFilterState, i::Int64, selection::DynamicSelection, steps::Int64, label=Val{:unlabeled}())
     num_accepted = 0
@@ -52,26 +53,26 @@ function mh_block_rejuvenation(particles::Gen.ParticleFilterState, t::Int64, obs
 
         # Vary number of fireflies
         n_fireflies = get_choices(particle)[:init=>:n_fireflies]
-        accepted = run_mh(particles, i, select(:init => :n_fireflies), 4, Val{:n_fireflies}())
+        accepted = run_mh(particles, i, select(:init => :n_fireflies), 1, Val{:n_fireflies}())
         nf_accepted += accepted
 
         # Vary locations from previous blink - quasi counterfactual that says "could this firefly have ended up here"
-        for n in 1:n_fireflies
-            selection = select()
-            prev_blink = get_prev_blink(particle, n, t)
-            for prev_t in prev_blink : t
-                push!(selection, :states => prev_t => :x => n)
-                push!(selection, :states => prev_t => :y => n)
-            end
-            push!(selection, :states => t => :blinking => n)
-            accepted = run_mh(particles, i, selection, 100, Val{:trajectory}())
-            location_accepted += accepted
-        end
+        # for n in 1:n_fireflies
+        #     selection = select()
+        #     prev_blink = get_prev_blink(particle, n, t)
+        #     for prev_t in prev_blink : t
+        #         push!(selection, :states => prev_t => :x => n)
+        #         push!(selection, :states => prev_t => :y => n)
+        #     end
+        #     push!(selection, :states => t => :blinking => n)
+        #     accepted = run_mh(particles, i, selection, 20, Val{:trajectory}())
+        #     location_accepted += accepted
+        # end
 
         for n in 1:n_fireflies
             selection = select()
             push!(selection, :states => t => :blinking => n)
-            accepted = run_mh(particles, i, selection, 100, Val{:blink}())
+            accepted = run_mh(particles, i, selection, 1, Val{:blink}())
             blinking_accepted += accepted
         end
 
@@ -79,7 +80,7 @@ function mh_block_rejuvenation(particles::Gen.ParticleFilterState, t::Int64, obs
         for n in 1:n_fireflies
             selection = select()
             push!(selection, :init => :color => n)
-            accepted = run_mh(particles, i, selection, 4, Val{:color}())
+            accepted = run_mh(particles, i, selection, 1, Val{:color}())
             color_accepted += accepted
         end
         
@@ -169,6 +170,9 @@ end
 @gen function proposal(trace::Gen.DynamicDSLTrace)
     scene_size, max_fireflies, max_steps = get_args(trace)
     old_n_fireflies = trace[:init => :n_fireflies]
+    old_colors = [trace[:init => :color => n] for n in 1:old_n_fireflies]
+    patches, num_patches = find_color_patches(observed_image, threshold, size_prior, luminance_threshold)
+    
     n_fireflies = {:init => :n_fireflies} ~ uniform_discrete(max(1, old_n_fireflies - 1), min(old_n_fireflies + 1, max_fireflies))
     states, _ = get_retval(trace)
 

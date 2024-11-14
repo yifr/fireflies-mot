@@ -8,6 +8,7 @@ include("./mcmc.jl")
 include("./visualizations.jl")
 include("./distribution_utils.jl")
 include("./utilities.jl")
+include("./detection.jl")
 
 function normalize_weights(log_weights::Vector{Float64})
     log_total_weight = logsumexp(log_weights)
@@ -37,81 +38,6 @@ function make_record(particle::Gen.DynamicDSLTrace, savedir::String, t::Int64, i
     return record
 end
 
-function find_color_patches(image::Array{Float64,3}, threshold::Float64, size_prior::Int, luminance_threshold::Float64)
-    height, width = size(image, 2), size(image, 3)
-    visited = zeros(Int, height, width)
-    patches = []
-
-    # Function to flood fill and track patch
-    function flood_fill(y, x)
-        stack = [(y, x)]
-        patch = []
-        initial_color = image[:, y, x]
-        too_large = false
-
-        while !isempty(stack)
-            cy, cx = pop!(stack)
-            if cy < 1 || cy > height || cx < 1 || cx > width || visited[cy, cx] == 1
-                continue
-            end
-
-            pixel_color = image[:, cy, cx]
-
-            # Luminance filter and color filter
-            if maximum(pixel_color) <= threshold || norm(pixel_color - initial_color) > luminance_threshold
-                continue
-            end
-
-            visited[cy, cx] = 1
-            push!(patch, (cx, cy, argmax(pixel_color)))
-
-            for dy in -1:1, dx in -1:1
-                if dy == 0 && dx == 0
-                    continue
-                end
-                push!(stack, (cy + dy, cx + dx))
-            end
-        end
-
-        if length(patch) > size_prior
-            too_large = true
-        end
-
-        return patch, too_large
-    end
-
-    # Function to split large patches using simple median split
-    function split_patch(patch)
-        xs, ys = [p[1] for p in patch], [p[2] for p in patch]
-        mean_x, mean_y = mean(xs), mean(ys)
-        cluster1, cluster2 = [], []
-
-        for p in patch
-            if p[1] < mean_x || p[2] < mean_y
-                push!(cluster1, p)
-            else
-                push!(cluster2, p)
-            end
-        end
-
-        return cluster1, cluster2
-    end
-
-    # Main loop to find patches
-    for y in 1:height, x in 1:width
-        if maximum(image[:, y, x]) > threshold && visited[y, x] == 0
-            patch, too_large = flood_fill(y, x)
-            if too_large
-                cluster1, cluster2 = split_patch(patch)
-                push!(patches, cluster1, cluster2)
-            else
-                push!(patches, patch)
-            end
-        end
-    end
-
-    return patches, length(patches)
-end
 
 @gen function init_proposal(max_fireflies::Int, img_array::Array{Float64,3}, step::Int)
     #scene_size, max_fireflies, _ = get_args(prev_trace)
@@ -205,7 +131,7 @@ end
 
             vx_limit = (prev_choices[:states => step - 1 => :vx => n])
             vy_limit = (prev_choices[:states => step - 1 => :vy => n])
-            l2_limit = 3 * norm([vx_limit, vy_limit])
+            l2_limit = 2 * norm([vx_limit, vy_limit])
             if l2_dist > l2_limit
                 continue
             end
@@ -215,11 +141,7 @@ end
             if color != patch[3]
                 continue
             end
-
-            if l2_dist == floatmax(Float64)
-                println(l2_dist + " is floatmax??")
-                println("prev_x: ", prev_x, " prev_y: ", prev_y, " patch_x: ", patch[1], " patch_y: ", patch[2])
-            end
+            
             cost_matrix[n, k] = l2_dist
         end
     end
@@ -307,7 +229,7 @@ function smc(trace::Gen.DynamicDSLTrace, model::Gen.DynamicDSLFunction, num_part
         ess_threshold = ess * 0.5
 
         # mh_block_rejuvenation(state, t, obs)
-        # data_driven_mcmc(state, obs, t, 10)
+        data_driven_mcmc(state, obs, t, 1)
         # mcmc_prior_rejuvenation(state, 1)
         if return_intermediate_traces
             particles = copy(state.traces) #sample_unweighted_traces(state, num_samples)
