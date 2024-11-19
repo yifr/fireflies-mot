@@ -123,9 +123,24 @@ def observe_fireflies(xs, ys, blinks, state_durations):
     rendered = render_frame(xs, ys, blinks, state_durations)
 
     # Run detection
-    
     noisy_obs = genjax.truncated_normal(rendered, 0.01, 0.0, 1.0) @ "pixels"
     return noisy_obs
+
+@gen 
+def get_observed_blinks(xs, ys, blinks):
+    blink_indices = jnp.nonzero(blinks, size=len(blinks))[0]
+    
+    # Initialize arrays with -1
+    observed_xs = jnp.full_like(xs, -1.)
+    observed_ys = jnp.full_like(ys, -1.)
+    
+    # Index the original arrays with blink_indices
+    observed_xs = observed_xs.at[blink_indices].set(xs[blink_indices])
+    observed_ys = observed_ys.at[blink_indices].set(ys[blink_indices])
+
+    observed_xs = genjax.normal(observed_xs, 0.1) @ "observed_xs"
+    observed_ys = genjax.normal(observed_ys, 0.1) @ "observed_ys"
+    return jnp.stack([observed_xs, observed_ys])
 
 @gen
 def step_and_observe(prev_state):
@@ -138,7 +153,8 @@ def step_and_observe(prev_state):
     ys = get_masked_values(masks, firefly_vals["y"])
     blinks = get_masked_values(masks, firefly_vals["blinking"])
     state_durations = get_masked_values(masks, firefly_vals["state_duration"])
-    observation = observe_fireflies(xs, ys, blinks, state_durations) @ "observations"
+    #observation = observe_fireflies(xs, ys, blinks, state_durations) @ "observations"
+    observation = get_observed_blinks(xs, ys, blinks) @ "observations"
     
     return (fireflies, observation)
 
@@ -164,31 +180,31 @@ def multifirefly_model(max_fireflies, temporal_mask):
     masks = jnp.array(max_fireflies <= n_fireflies)
     init_states = init_firefly.mask().vmap(in_axes=(0))(masks) @ "init"
 
-    init_obs = jnp.zeros((SCENE_SIZE, SCENE_SIZE))
-    
+    #init_obs = jnp.zeros((SCENE_SIZE, SCENE_SIZE))
+    init_obs = jnp.zeros((2, len(max_fireflies))).astype(jnp.float32)
     fireflies, observations = mask_scan_step(
                             (init_states, init_obs), temporal_mask) @ "steps"
     return fireflies, observations
 
 
-def main():
-    key = jax.random.PRNGKey(3124)
-    key, subkey = jax.random.split(key)
-    max_fireflies = jnp.arange(1, 5)
-    multi_model_jit = jax.jit(multifirefly_model.importance)
-    constraints = C["n_fireflies"].set(1)
-    key, subkey = jax.random.split(key)
+# def main():
+#     key = jax.random.PRNGKey(3124)
+#     key, subkey = jax.random.split(key)
+#     max_fireflies = jnp.arange(1, 5)
+#     multi_model_jit = jax.jit(multifirefly_model.importance)
+#     constraints = C["n_fireflies"].set(1)
+#     key, subkey = jax.random.split(key)
 
-    run_until = jnp.arange(TIME_STEPS) < TIME_STEPS
-    tr, weight = multi_model_jit(subkey, constraints, (max_fireflies, run_until,))
-    chm = tr.get_sample()
-    x = chm["steps", ..., "dynamics", ..., "x"]
-    print("Generating animation")
-    frames = get_frames(chm)
-    ani = animate(frames, 20)
-    # print("Saving animation...")
-    # ani.save("animations/genjax_model/maxglowsize_1.gif", writer="imagemagick", fps=20)
-    plt.show()
+#     run_until = jnp.arange(TIME_STEPS) < TIME_STEPS
+#     tr, weight = multi_model_jit(subkey, constraints, (max_fireflies, run_until,))
+#     chm = tr.get_sample()
+#     x = chm["steps", ..., "dynamics", ..., "x"]
+#     print("Generating animation")
+#     frames = get_frames(chm)
+#     ani = animate(frames, 20)
+#     # print("Saving animation...")
+#     # ani.save("animations/genjax_model/maxglowsize_1.gif", writer="imagemagick", fps=20)
+#     plt.show()
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
