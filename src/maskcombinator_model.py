@@ -121,6 +121,9 @@ def observe_fireflies(xs, ys, blinks, state_durations):
     Assumes xs, ys, blinks, state_durations have been filled with 0s in place of masks
     """
     rendered = render_frame(xs, ys, blinks, state_durations)
+
+    # Run detection
+    
     noisy_obs = genjax.truncated_normal(rendered, 0.01, 0.0, 1.0) @ "pixels"
     return noisy_obs
 
