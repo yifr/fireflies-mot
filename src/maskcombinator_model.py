@@ -74,7 +74,7 @@ def step_firefly(firefly):
     y = firefly["y"]
     vx = firefly["vx"]
     vy = firefly["vy"]
-    blink_rate = firefly["blink_rate"]
+    base_blink_rate = firefly["blink_rate"]
     was_blinking = firefly["blinking"]
     state_duration = firefly["state_duration"]
 
@@ -94,7 +94,7 @@ def step_firefly(firefly):
     new_vy = genjax.truncated_normal(vx, .5, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
 
     # Update blinking - currently a finite state machine with weighted on/off
-    current_blink_rate = jnp.where(was_blinking, 1 - blink_rate, blink_rate)
+    current_blink_rate = jnp.where(was_blinking, 1 / state_duration, base_blink_rate)
     blink = genjax.flip(current_blink_rate) @ "blink"
     
     # Keep count of duration of current state or restart the counter on change
@@ -105,7 +105,7 @@ def step_firefly(firefly):
         "y": new_y,
         "vx": new_vx,
         "vy": new_vy,
-        "blink_rate": blink_rate,
+        "blink_rate": base_blink_rate,
         "blinking": blink,
         "state_duration": new_state_duration
     }
@@ -128,16 +128,13 @@ def observe_fireflies(xs, ys, blinks, state_durations):
 
 @gen 
 def get_observed_blinks(xs, ys, blinks):
-    blink_indices = jnp.nonzero(blinks, size=len(blinks))[0]
-    
-    # Initialize arrays with -1
     observed_xs = jnp.full_like(xs, -1.)
     observed_ys = jnp.full_like(ys, -1.)
     
-    # Index the original arrays with blink_indices
-    observed_xs = observed_xs.at[blink_indices].set(xs[blink_indices])
-    observed_ys = observed_ys.at[blink_indices].set(ys[blink_indices])
-
+    # Use where to conditionally select values
+    observed_xs = jnp.where(blinks, xs, observed_xs)
+    observed_ys = jnp.where(blinks, ys, observed_ys)
+    
     observed_xs = genjax.normal(observed_xs, 0.1) @ "observed_xs"
     observed_ys = genjax.normal(observed_ys, 0.1) @ "observed_ys"
     return jnp.stack([observed_xs, observed_ys])
