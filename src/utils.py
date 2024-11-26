@@ -109,9 +109,53 @@ def get_masked_values(mask, values=None, fill_value=0.):
 
 
 def get_frames(chm):
-    observations = list(chm["steps", ..., "observations", "pixels"].value)
+    """
+    Expects a model with a pixel observation likelihood
+    """
+    try:    
+        observations = list(chm["steps", ..., "observations", "pixels"].value)
+    except:
+        raise ValueError('Model does not have choices ["steps", :, "observations", "pixels"]. Double check your observation model')
+    
     return observations
 
+def get_observations(chm):
+    """
+    Expects a model with observations of the form observed_xs and observed_ys
+    """
+    try:
+        observed_xs = chm["steps", :, "observations", "observed_xs"]
+        observed_ys = chm["steps", :, "observations", "observed_ys"]
+
+        observed_xs = observed_xs.value[:, :len(observed_xs.flag)]
+        observed_ys = observed_ys.value[:, :len(observed_ys.flag)]
+    except:
+        raise ValueError('Model does not have choices ["steps", :, "observations", "observed_xs]. Double check your observation model')
+    return observed_xs, observed_ys
+
+def get_gt_locations(chm):
+    """
+    Expects masked dynamics with x and y values. 
+    Returns the unmasked x and y values, and -1s in place of masked values
+    """
+    xs = chm["steps", :, "dynamics", :, "x"]
+    ys = chm["steps", :, "dynamics", :, "y"]
+
+    xs = jnp.where(xs.flag, xs.value, -1.)
+    ys = jnp.where(ys.flag, ys.value, -1.)
+    return xs, ys
+
+def get_dynamics(chm, mask_value=-1.):
+    """
+    Expects masked dynamics with x and y values. 
+    """
+    xs = chm["steps", :, "dynamics", :, "x"]
+    ys = chm["steps", :, "dynamics", :, "y"]
+    blinks = chm["steps", :, "dynamics", :, "blink"]
+    xs = jnp.where(xs.flag, xs.value, mask_value)
+    ys = jnp.where(ys.flag, ys.value, mask_value)
+    blinks = jnp.where(blinks.flag, blinks.value, False)
+    return xs, ys, blinks
 
 def animate(frames, fps, ax=None):
     if ax == None:
@@ -129,7 +173,7 @@ def animate(frames, fps, ax=None):
     plt.close()
     return ani
 
-def animate_fireflies(x, y, blink, pixels,
+def animate_fireflies(x, y, blink,
                      mask_value=0,  # Value indicating masked positions (0 or -1)
                      fps=30, 
                      duration=None,
@@ -161,6 +205,10 @@ def animate_fireflies(x, y, blink, pixels,
     Returns:
         matplotlib animation object
     """
+    if x.ndim == 2:
+        x = x[None, :, :]
+        y = y[None, :, :]
+        blink = blink[None, :, :]
     N, T, K = x.shape
     
     # Create figure and axis
