@@ -143,6 +143,7 @@ def get_gt_locations(chm):
 
     xs = jnp.where(xs.flag, xs.value, -1.)
     ys = jnp.where(ys.flag, ys.value, -1.)
+    
     return xs, ys
 
 def get_dynamics(chm, mask_value=-1.):
@@ -174,7 +175,7 @@ def animate(frames, fps, ax=None):
     return ani
 
 def animate_fireflies(x, y, blink,
-                     mask_value=0,  # Value indicating masked positions (0 or -1)
+                     mask_value=-1,  # Value indicating masked positions (0 or -1)
                      fps=30, 
                      duration=None,
                      trail_length=10,
@@ -212,7 +213,7 @@ def animate_fireflies(x, y, blink,
     N, T, K = x.shape
     
     # Create figure and axis
-    fig, ax = plt.subplots(figsize=(10, 10), facecolor=background_color)
+    fig, ax = plt.subplots(figsize=(5, 5), facecolor=background_color)
     ax.set_facecolor(background_color)
     
     # Set axis limits with some padding, ignoring masked values
