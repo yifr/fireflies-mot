@@ -29,14 +29,14 @@ function plot_multiple_fireflies(trace; plot_ground_truth=true, firefly_size=4)
             * " over $steps steps")
 
     if plot_ground_truth
-        fig = plot(layout=grid(1, 2), size=(800, 400), background_color=RGB(0, 0, 0), showaxis=true, ticks=false)
+        fig = Plots.plot(layout=grid(1, 2), size=(800, 400), background_color=RGB(0, 0, 0), showaxis=true, ticks=false)
         gr()
     else
-        fig = plot(layout=grid(1, 1), size=(400, 400), background_color=RGB(0, 0, 0), showaxis=true, ticks=false)
+        fig = Plots.plot(layout=grid(1, 1), size=(400, 400), background_color=RGB(0, 0, 0), showaxis=true, ticks=false)
     end
 
-    xlims!(-1, scene_size + 1)
-    ylims!(-1, scene_size + 1)
+    xlims!(fig, (-1, scene_size + 1))
+    ylims!(fig, (-1, scene_size + 1))
 
     anim = Plots.@animate for t in 1:steps
         if plot_ground_truth
