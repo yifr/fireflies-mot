@@ -121,14 +121,19 @@ def get_frames(chm):
 
 def get_observations(chm):
     """
-    Expects a model with observations of the form observed_xs and observed_ys
+    Args:
+        chm: genjax.ChoiceMap: A choice map from a generative model
+
+    Returns:
+        observed_xs: Array[Float]: x positions of observed fireflies
+        observed_ys: Array[Float]: y positions of observed fireflies
     """
     try:
         observed_xs = chm["steps", :, "observations", "observed_xs"]
         observed_ys = chm["steps", :, "observations", "observed_ys"]
 
-        observed_xs = observed_xs.value[:, :len(observed_xs.flag)]
-        observed_ys = observed_ys.value[:, :len(observed_ys.flag)]
+        observed_xs = observed_xs.value
+        observed_ys = observed_ys.value
     except:
         raise ValueError('Model does not have choices ["steps", :, "observations", "observed_xs]. Double check your observation model')
     return observed_xs, observed_ys

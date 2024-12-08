@@ -44,7 +44,7 @@ def init_firefly():
     vy = genjax.truncated_normal(0., 1., MIN_VELOCITY, MAX_VELOCITY) @ "vy"
 
     blink_rate = genjax.normal(0.1, 0.01) @ "blink_rate"
-    blinking = jax.lax.select(True, 0, 0)
+    blinking = False
     state_duration = jax.lax.select(True, 0, 0)
 
     firefly = {
@@ -95,7 +95,7 @@ def step_firefly(firefly):
 
     # Update blinking - currently a finite state machine with weighted on/off
     current_blink_rate = jnp.where(was_blinking, 1 / state_duration, base_blink_rate)
-    blink = genjax.flip(current_blink_rate) @ "blink"
+    blink = genjax.flip(current_blink_rate) @ "blinking"
     
     # Keep count of duration of current state or restart the counter on change
     new_state_duration = jnp.where(blink == was_blinking, state_duration + 1, 1)
@@ -113,7 +113,7 @@ def step_firefly(firefly):
     return firefly
 
 @gen
-def observe_fireflies(xs, ys, blinks, state_durations):
+def get_pixel_observation(xs, ys, blinks, state_durations):
     """
     Generate deterministic rendering given xs, ys and blinks,
     and apply small amount of noise (truncated, to keep everything in nice pixel space)
@@ -150,12 +150,12 @@ def step_and_observe(prev_state):
     ys = get_masked_values(masks, firefly_vals["y"])
     blinks = get_masked_values(masks, firefly_vals["blinking"])
     state_durations = get_masked_values(masks, firefly_vals["state_duration"])
-    #observation = observe_fireflies(xs, ys, blinks, state_durations) @ "observations"
+    #observation = get_pixel_observation(xs, ys, blinks, state_durations) @ "observations"
     observation = get_observed_blinks(xs, ys, blinks) @ "observations"
     
     return (fireflies, observation)
 
-mask_scan_step = masked_scan_combinator(step_and_observe, n=TIME_STEPS)
+mask_iterate_step = genjax.masked_iterate_final()(step_and_observe)
 
 @gen    
 def multifirefly_model(max_fireflies, temporal_mask): 
@@ -165,8 +165,7 @@ def multifirefly_model(max_fireflies, temporal_mask):
 
     Args:
         max_fireflies (Array[Int]): int array of indices (jnp.arange(1, max_fireflies))
-        temporal_mask (Flag(Array[Bool])): Boolean array to mask timesteps (for SMC). It should be 
-                                            wrapped in the `Flag` construct for now.
+        temporal_mask (Flag(Array[Bool])): Boolean array to mask timesteps (for SMC). 
 
     Returns:
         fireflies: dict representation of all the fireflies (including masked ones)
@@ -179,7 +178,7 @@ def multifirefly_model(max_fireflies, temporal_mask):
 
     #init_obs = jnp.zeros((SCENE_SIZE, SCENE_SIZE))
     init_obs = jnp.zeros((2, len(max_fireflies))).astype(jnp.float32)
-    fireflies, observations = mask_scan_step(
+    fireflies, observations = mask_iterate_step(
                             (init_states, init_obs), temporal_mask) @ "steps"
     return fireflies, observations
 
