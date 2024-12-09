@@ -441,3 +441,44 @@ def animate_fireflies_with_images(images, x, y, blink,
     
     plt.close()
     return anim
+
+
+def scatter_animation(observed_xs, observed_ys, gt_xs=None, gt_ys=None, scene_size=32):
+    """
+    Basic scatter plot animation with moving points
+    """
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.set_xlim(0, scene_size)
+    ax.set_ylim(scene_size, 0)
+    ax.set_title('Scatter Plot Animation')
+    ax.set_facecolor("black")
+    
+    # Initialize scatter plot
+    gt_scatter = ax.scatter([], [], edgecolors='g', facecolors=None, s=200, alpha=0.25, animated=True)
+    obs_scatter = ax.scatter([], [], c='red', s=200, animated=True)
+
+    # Animation update function
+    def update(frame):
+        if gt_xs is not None:
+            xs = [x for x in gt_xs[frame, :] if x > 0]
+            ys = [y for y in gt_ys[frame, :] if y > 0]
+            gt_scatter.set_offsets(np.column_stack([xs, ys]))
+            
+        xs = [x for x in observed_xs[frame, :] if x > 0]
+        ys = [y for y in observed_ys[frame, :] if y > 0]
+        # Update scatter plot data
+        obs_scatter.set_offsets(np.column_stack([xs, ys]))
+
+        return obs_scatter, gt_scatter
+    
+    # Create animation
+    anim = animation.FuncAnimation(
+        fig, 
+        update, 
+        frames=len(observed_xs),  # Number of animation frames
+        interval=100,  # Milliseconds between frames
+        blit=True
+    )
+    
+    return anim

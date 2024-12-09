@@ -94,8 +94,8 @@ def step_firefly(firefly):
     new_vy = genjax.truncated_normal(vx, .5, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
 
     # Update blinking - currently a finite state machine with weighted on/off
-    current_blink_rate = jnp.where(was_blinking, 1 / state_duration, base_blink_rate)
-    blink = genjax.flip(current_blink_rate) @ "blinking"
+    # current_blink_rate = jnp.where(was_blinking, 1 / state_duration, base_blink_rate)
+    blink = genjax.flip(base_blink_rate) @ "blinking"
     
     # Keep count of duration of current state or restart the counter on change
     new_state_duration = jnp.where(blink == was_blinking, state_duration + 1, 1)
