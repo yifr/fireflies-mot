@@ -7,6 +7,7 @@ from matplotlib import animation
 from matplotlib.animation import FuncAnimation
 import matplotlib.cm as cm
 import numpy as np
+from genjax import ChoiceMapBuilder as C
 
 class HiddenIndex:
     def __repr__(self):
@@ -443,42 +444,61 @@ def animate_fireflies_with_images(images, x, y, blink,
     return anim
 
 
-def scatter_animation(observed_xs, observed_ys, gt_xs=None, gt_ys=None, scene_size=32):
+def single_firefly_observations(observations):
     """
-    Basic scatter plot animation with moving points
+    Assigns all the observations to the same firefly
     """
-    # Create figure and axis
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.set_xlim(0, scene_size)
-    ax.set_ylim(scene_size, 0)
-    ax.set_title('Scatter Plot Animation')
-    ax.set_facecolor("black")
-    
-    # Initialize scatter plot
-    gt_scatter = ax.scatter([], [], edgecolors='g', facecolors=None, s=200, alpha=0.25, animated=True)
-    obs_scatter = ax.scatter([], [], c='red', s=200, animated=True)
+    observations = jnp.where(observations > 0, observations, 0)
+    single_firefly_observations = jnp.sum(observations, axis=1)
 
-    # Animation update function
-    def update(frame):
-        if gt_xs is not None:
-            xs = [x for x in gt_xs[frame, :] if x > 0]
-            ys = [y for y in gt_ys[frame, :] if y > 0]
-            gt_scatter.set_offsets(np.column_stack([xs, ys]))
-            
-        xs = [x for x in observed_xs[frame, :] if x > 0]
-        ys = [y for y in observed_ys[frame, :] if y > 0]
-        # Update scatter plot data
-        obs_scatter.set_offsets(np.column_stack([xs, ys]))
+    new_observations = -jnp.ones_like(observations) * 10
+    new_observations = new_observations.at[:, 0].set(single_firefly_observations)
+    new_observations = jnp.where(new_observations > 0, new_observations, -10.)
+    return new_observations
 
-        return obs_scatter, gt_scatter
+
+def set_observations(n_fireflies, observed_xs, observed_ys, max_fireflies):
+    """
+    Creates a choicemap encoding observed locations of fireflies at specific times
+
+    Args:
+        observed_xs, observed_ys: jnp.array: (n, t) array of observed x and y locations of fireflies
+        max_fireflies: int: the maximum number of fireflies in a scene
+        steps: int: the maximum number of steps in a scene
+    """
+
+    steps, n = observed_xs.shape
+    chm = C.n()
+    vals_x = jnp.zeros((steps, max_fireflies), jnp.float32)
+    vals_y = jnp.zeros((steps, max_fireflies), jnp.float32)
+    blinks = jnp.zeros((steps, max_fireflies), jnp.bool)
+
+    # fill in addresses
+    if n_fireflies == 1:
+        observed_xs = jnp.stack([jnp.sum(observed_xs, axis=1), jnp.zeros(steps)], axis=1)
+        observed_ys = jnp.stack([jnp.sum(observed_ys, axis=1), jnp.zeros(steps)], axis=1)
+        print(observed_xs.shape)
     
-    # Create animation
-    anim = animation.FuncAnimation(
-        fig, 
-        update, 
-        frames=len(observed_xs),  # Number of animation frames
-        interval=100,  # Milliseconds between frames
-        blit=True
-    )
-    
-    return anim
+    chm_dict = {}
+    for t in range(steps):
+        observed_xs_t = observed_xs[t]
+        observed_ys_t = observed_ys[t]
+       
+        for i in range(n):
+            if observed_xs_t[i] > 0:
+                obs_x = observed_xs_t[i]
+                obs_y = observed_ys_t[i]
+                
+                vals_y = vals_x.at[t, i].set(obs_x)
+                vals_x = vals_y.at[t, i].set(obs_y)
+                blinks = blinks.at[t, i].set(jnp.bool(True))       
+                chm = chm ^ C["steps", t, "dynamics", i, "x"].set(obs_x)
+                chm = chm ^ C["steps", t, "dynamics", i, "y"].set(obs_y)
+                chm = chm ^ C["steps", t, "dynamics", i, "blinking"].set(jnp.bool(True))
+                chm = chm ^ C["steps", t, "observations", i, "observed_xs"].set(obs_x)
+                chm = chm ^ C["steps", t, "observations", i, "observed_ys"].set(obs_y)
+            else:
+                chm = chm ^ C["steps", t, "dynamics", i, "blinking"].set(jnp.bool(False))
+                chm = chm ^ C["steps", t, "observations", i, "observed_xs"].set(jnp.float32(-1))
+                chm = chm ^ C["steps", t, "observations", i, "observed_ys"].set(jnp.float32(-1))
+    return chm
