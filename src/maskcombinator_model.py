@@ -81,6 +81,9 @@ def step_firefly(firefly):
     # Switch direction on collision
     vx = jnp.where((x + vx > SCENE_SIZE) | (x + vx < 0.), -vx, vx)
     vy = jnp.where((y + vy > SCENE_SIZE) | (y + vy < 0.), -vy, vy)
+
+    new_vx = genjax.truncated_normal(vx, .3, MIN_VELOCITY, MAX_VELOCITY) @ "vx"
+    new_vy = genjax.truncated_normal(vy, .3, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
     
     # Update position
     new_x = x + vx  
@@ -90,8 +93,6 @@ def step_firefly(firefly):
     new_x = genjax.truncated_normal(new_x, 0.01, 0., SCENE_SIZE.astype(jnp.float32)) @ "x" 
     new_y = genjax.truncated_normal(new_y, 0.01, 0., SCENE_SIZE.astype(jnp.float32)) @ "y"
     
-    new_vx = genjax.truncated_normal(vx, .3, MIN_VELOCITY, MAX_VELOCITY) @ "vx"
-    new_vy = genjax.truncated_normal(vx, .3, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
 
     # Update blinking - currently a finite state machine with weighted on/off
     # current_blink_rate = jnp.where(was_blinking, 1 / state_duration, base_blink_rate)
