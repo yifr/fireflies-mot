@@ -78,16 +78,16 @@ def step_firefly(firefly):
     was_blinking = firefly["blinking"]
     state_duration = firefly["state_duration"]
 
-    # Switch direction on collision
-    vx = jnp.where((x + vx > SCENE_SIZE) | (x + vx < 0.), -vx, vx)
-    vy = jnp.where((y + vy > SCENE_SIZE) | (y + vy < 0.), -vy, vy)
+    new_vx = genjax.truncated_normal(vx, .1, MIN_VELOCITY, MAX_VELOCITY) @ "vx"
+    new_vy = genjax.truncated_normal(vy, .1, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
 
-    new_vx = genjax.truncated_normal(vx, .3, MIN_VELOCITY, MAX_VELOCITY) @ "vx"
-    new_vy = genjax.truncated_normal(vy, .3, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
-    
+    # Switch direction on collision
+    new_vx = jnp.where((x + new_vx >= SCENE_SIZE - 1.) | (x + new_vx <= 1.), -new_vx, new_vx)
+    new_vy = jnp.where((y + new_vy >= SCENE_SIZE - 1.) | (y + new_vy <= 1.), -new_vy, new_vy)
+
     # Update position
-    new_x = x + vx  
-    new_y = y + vy 
+    new_x = jnp.clip(x + new_vx, 0., SCENE_SIZE.astype(jnp.float32))
+    new_y = jnp.clip(y + new_vy, 0., SCENE_SIZE.astype(jnp.float32))
 
     # Add some noise to position and velocity
     new_x = genjax.truncated_normal(new_x, 0.01, 0., SCENE_SIZE.astype(jnp.float32)) @ "x" 

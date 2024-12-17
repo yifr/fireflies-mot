@@ -43,13 +43,13 @@ def generate_trajectory(prev_state):
     x, y, vx, vy, scene_size = prev_state
     vx = jnp.where((x + vx > scene_size) | (x + vx < 0.), -vx, vx)
     vy = jnp.where((y + vy > scene_size) | (y + vy < 0.), -vy, vy)
-    vx = genjax.normal(vx, 0.1) @ "vx"
-    vy = genjax.normal(vy, 0.1) @ "vy"
-    x = genjax.normal(x + vx, 0.5) @ "x"
-    y = genjax.normal(y + vy, 0.5) @ "y"
+    vx = genjax.normal(vx, 0.3) @ "vx"
+    vy = genjax.normal(vy, 0.3) @ "vy"
+    x = genjax.truncated_normal(x + vx, 0.01, 0., jnp.float32(scene_size)) @ "x"
+    y = genjax.truncated_normal(y + vy, 0.01, 0., jnp.float32(scene_size)) @ "y"
     return (x, y, vx, vy, scene_size)
 
-def get_trajectory(steps: int, scene_size: float, vx=1., vy=1., key=jax.random.PRNGKey(43)):
+def get_trajectory(steps: int, scene_size: float, init_x=None, init_y=None, vx=1., vy=1., key=jax.random.PRNGKey(43)):
     """
     Runs trajectory model for T steps and returns the x, y coordinates
     Args:
@@ -60,12 +60,15 @@ def get_trajectory(steps: int, scene_size: float, vx=1., vy=1., key=jax.random.P
         key (jnp.PRNGKey): random key
     """
     keys = jax.random.split(key, steps)
-    init_x = jax.random.uniform(key) * scene_size
-    init_y = jax.random.uniform(key) * scene_size
-    trajectory = generate_trajectory.iterate(n=steps - 1).simulate(key, ((init_x, init_y, vx, vy, scene_size,),))
+    if init_x is None:
+        init_x = jax.random.uniform(key) * scene_size
+    if init_y is None:
+        init_y = jax.random.uniform(key) * scene_size
+    trajectory = generate_trajectory.iterate(n=int(steps)).simulate(key, ((init_x, init_y, vx, vy, scene_size,),))
+    score = trajectory.get_score()
     retvals = trajectory.get_retval()
-    xs, ys = retvals[0], retvals[1]
-    return xs, ys
+    xs, ys = retvals[0][:-1], retvals[1][:-1]
+    return (xs, ys), score
 
 def n_similar_trajectories(N: int, T: int, scene_size: float, vx=1., vy=1., noise_std=0.1, key=jax.random.PRNGKey(43)):
     """
@@ -82,7 +85,7 @@ def n_similar_trajectories(N: int, T: int, scene_size: float, vx=1., vy=1., nois
     Returns
         Tuple[jnp.ndarray, jnp.ndarray]: (x, y) trajectories
     """
-    xs, ys = get_trajectory(T, scene_size, vx, vy, key)
+    (xs, ys), score = get_trajectory(T, scene_size, vx, vy, key)
     xs = xs.squeeze()
     ys = ys.squeeze()
     trajectories = [(xs, ys)]
@@ -126,13 +129,10 @@ def trajectory_between(start_point, end_point, num_steps, noise_scale=1.0, seed=
     x0, y0 = start_point
     x1, y1 = end_point
     
-    dx = (x1 - x0) / num_steps
-    dy = (y1 - y0) / num_steps
-    
     # Initialize arrays for storing coordinates
     xs = np.zeros(num_steps + 1)
     ys = np.zeros(num_steps + 1)
-    
+
     # Set initial points separately
     xs[0] = x0
     ys[0] = y0
@@ -180,29 +180,19 @@ def constrained_trajectory(observed_xs, observed_ys, scene_size=32., noise_scale
     observation_indices = np.where(observed_xs > 0)[0]
     if len(observation_indices) == 0:
         # No observations, generate random walk from start to end
-        start_point = (np.random.uniform(0, scene_size), np.random.uniform(0, scene_size))
-        end_point = (np.random.uniform(0, scene_size), np.random.uniform(0, scene_size))
-
-        xs, ys = trajectory_between(start_point, end_point, len(observed_xs), noise_scale)
+        (xs, ys) = get_trajectory(len(observed_xs), 32., key=key) 
         return xs, ys
 
     # Handle case where first observation isn't at t=0
     if observation_indices[0] > 0:
         first_x = observed_xs[observation_indices[0]]
         first_y = observed_ys[observation_indices[0]]
-        steps_to_obs = observation_indices[0]
-        # Set start point based on velocity and steps to first observation
-        # Make sure it's inside the scene
-        truncnorm = genjax.truncated_normal.simulate
-        start_x = truncnorm(key, (first_x, float(steps_to_obs), 0., scene_size)).get_retval()
-        start_y = truncnorm(key, (first_y, float(steps_to_obs), 0., scene_size)).get_retval()
-        start_point = (start_x, start_y)
-        end_point = (first_x, first_y)
         steps = observation_indices[0]
-        if steps > 0:
-            walk_xs, walk_ys = trajectory_between(start_point, end_point, steps, noise_scale)
-            xs[:steps] = jnp.clip(walk_xs, 0., scene_size)
-            ys[:steps] = jnp.clip(walk_ys, 0., scene_size)
+        # Set start point based on velocity and steps to first observation
+        # Make sure it's inside the scene    
+        walk_xs, walk_ys = get_trajectory(steps, scene_size, first_x, first_y, key=key)
+        xs[:steps] = walk_xs[::-1]
+        ys[:steps] = walk_ys[::-1]
 
     # Fill in trajectories between each pair of observations
     for i in range(len(observation_indices)-1):
@@ -224,15 +214,10 @@ def constrained_trajectory(observed_xs, observed_ys, scene_size=32., noise_scale
     if observation_indices[-1] < len(observed_xs) - 1:
         last_x = observed_xs[observation_indices[-1]]
         last_y = observed_ys[observation_indices[-1]]
-        steps_from_obs = observation_indices[-1]
         # Generate random walk from last observation to scene edge
-        start_point = (last_x, last_y)
-        end_x = truncnorm(key, (last_x, float(steps_from_obs), 0., scene_size)).get_retval()
-        end_y = truncnorm(key, (last_y, float(steps_from_obs), 0., scene_size)).get_retval()
-        end_point = (end_x, end_y) 
         steps = len(observed_xs) - observation_indices[-1] - 1
         if steps > 0:
-            walk_xs, walk_ys = trajectory_between(start_point, end_point, steps, noise_scale)
+            (walk_xs, walk_ys) = get_trajectory(steps, scene_size, last_x, last_y, key=key)
             xs[observation_indices[-1]+1:] = jnp.clip(walk_xs, 0., scene_size)
             ys[observation_indices[-1]+1:] = jnp.clip(walk_ys, 0., scene_size)
     
@@ -248,12 +233,23 @@ def generate_full_trajectory_constraints(observed_xs, observed_ys, scene_size=32
     xs: (steps, N) sized array of x-coordinates filled in
     ys: (steps, N) sized array of y-coordinates filled in
     """
-    n = observed_xs.shape[1]
+    steps, n = observed_xs.shape
     xs = np.zeros_like(observed_xs)
     ys = np.zeros_like(observed_ys)
+    vxs = np.zeros_like(observed_xs) 
+    vys = np.zeros_like(observed_ys)
+
     for i in range(n):
         xs[:, i], ys[:, i] = constrained_trajectory(observed_xs[:, i], observed_ys[:, i], scene_size, noise_scale, key=key)
-    return xs, ys
+        # v_t = x_{t+1} - x_t
+        vxs[:-1, i] = xs[1:, i] - xs[:-1, i]
+        vys[:-1, i] = ys[1:, i] - ys[:-1, i]
+
+    if steps > 1:
+        vxs[-1] = 0.5
+        vys[-1] = 0.5
+    
+    return xs, ys, vxs, vys
 
 
 def get_trajectory_constraints(observed_xs, observed_ys, existing_constraints=None, scene_size=32., noise_scale=1.0, key=jax.random.PRNGKey(43)):
@@ -270,22 +266,36 @@ def get_trajectory_constraints(observed_xs, observed_ys, existing_constraints=No
     Returns:
     likelihood: float
     """
-    xs, ys = generate_full_trajectory_constraints(observed_xs, observed_ys, scene_size, noise_scale, key=key)
+    xs, ys, vxs, vys = generate_full_trajectory_constraints(observed_xs, observed_ys, scene_size, noise_scale, key=key)
+
     if existing_constraints is None:
         chm = C.n()
     else:
         chm = existing_constraints
-
-    blinking_constraints = jnp.where(observed_xs > -1, True, False)
+        
     chm = chm | C["steps", :, "dynamics", :, "x"].set(jnp.array(xs)) 
     chm = chm | C["steps", :, "dynamics", :, "y"].set(jnp.array(ys))
+    chm = chm | C["steps", :, "dynamics", :, "vx"].set(jnp.array(vxs))
+    chm = chm | C["steps", :, "dynamics", :, "vy"].set(jnp.array(vys))
     chm = chm | C["steps", :, "observations", "observed_xs", :].set(observed_xs)
     chm = chm | C["steps", :, "observations", "observed_ys", :].set(observed_ys)
-    chm = chm | C["steps", :, "dynamics", :, "blinking"].set(blinking_constraints)
+
+    # Set initial conditions
+    init_x = xs[0] - vxs[0]
+    init_y = ys[0] - vys[0]
+    init_vx = vxs[0]
+    init_vy = vys[0]
+
+    chm = chm | C["init", :, "x"].set(init_x)
+    chm = chm | C["init", :, "y"].set(init_y)
+    chm = chm | C["init", :, "vx"].set(init_vx)
+    chm = chm | C["init", :, "vy"].set(init_vy)
 
     # Set blinks
-    blinks = jnp.where(observed_xs > -1, True, False)
-    chm = chm | C["steps", :, "dynamics", :, "blinking"].set(blinks)
+    blinking = jnp.where(observed_xs > -1, True, False)
+    blink_rates = blinking.sum(axis=0) / len(observed_xs)
+    chm = chm | C["steps", :, "dynamics", :, "blinking"].set(blinking)
+    chm = chm | C["init", :, "blink_rate"].set(blink_rates)
 
     return chm
 

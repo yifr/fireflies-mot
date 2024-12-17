@@ -502,3 +502,56 @@ def set_observations(n_fireflies, observed_xs, observed_ys, max_fireflies):
                 chm = chm ^ C["steps", t, "observations", i, "observed_xs"].set(jnp.float32(-1))
                 chm = chm ^ C["steps", t, "observations", i, "observed_ys"].set(jnp.float32(-1))
     return chm
+
+
+def scatter_animation(observed_xs, observed_ys, gt_xs=None, gt_ys=None, fig=None, ax=None, SCENE_SIZE=32):
+    """
+    Basic scatter plot animation with moving points
+    """
+    # Create figure and axis
+    if fig is None or ax is None:
+        fig, ax = plt.subplots()
+
+    ax.set_xlim(0, SCENE_SIZE)
+    ax.set_ylim(SCENE_SIZE, 0)
+    ax.set_title('Scatter Plot Animation')
+    ax.set_facecolor("black")
+    
+    # Initialize scatter plot
+    gt_scatter = ax.scatter([], [], edgecolors='g', facecolors=None, s=200, alpha=0.25, animated=True)
+    obs_scatter = ax.scatter([], [], c='red', s=200, animated=True)
+
+    # Animation update function
+    def update(frame):
+        if gt_xs is not None:
+            xs = [x for x in gt_xs[frame, :] if x > -1]
+            ys = [y for y in gt_ys[frame, :] if y > -1]
+            if (len(xs) != len(ys)):    
+                print(f"{frame}: Error - gt xs and ys have different shapes")
+                print(xs, ys)
+                
+            gt_scatter.set_offsets(np.column_stack([xs, ys]))
+
+            
+        xs = [x for x in observed_xs[frame, :] if x > -1]
+        ys = [y for y in observed_ys[frame, :] if y > -1]
+
+        if(len(xs) != len(ys)):
+            print(f"{frame}: Error - observed xs and ys have different shapes")
+            print(xs, ys)
+            
+        # Update scatter plot data
+        obs_scatter.set_offsets(np.column_stack([xs, ys]))
+
+        return obs_scatter, gt_scatter
+    
+    # Create animation
+    anim = animation.FuncAnimation(
+        fig, 
+        update, 
+        frames=len(observed_xs),  # Number of animation frames
+        interval=100,  # Milliseconds between frames
+        blit=True
+    )
+    
+    return anim

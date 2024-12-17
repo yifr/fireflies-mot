@@ -125,8 +125,3 @@ class JaxKey():
             return keys
 
 
-
-def test_filter():
-    keygen = JaxKey(123)
-    
-    
