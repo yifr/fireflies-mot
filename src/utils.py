@@ -518,8 +518,8 @@ def scatter_animation(observed_xs, observed_ys, gt_xs=None, gt_ys=None, fig=None
     ax.set_facecolor("black")
     
     # Initialize scatter plot
-    gt_scatter = ax.scatter([], [], edgecolors='g', facecolors=None, s=200, alpha=0.25, animated=True)
-    obs_scatter = ax.scatter([], [], c='red', s=200, animated=True)
+    gt_scatter = ax.scatter([], [], edgecolors='r', facecolors=None, s=200, alpha=0.25, animated=True)
+    obs_scatter = ax.scatter([], [], c='g', s=200, animated=True)
 
     # Animation update function
     def update(frame):

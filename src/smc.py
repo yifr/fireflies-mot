@@ -8,8 +8,9 @@ def maybe_resample(key, log_weights, ess_threshold):
     log_total_weight = jax.nn.logsumexp(log_weights)
     log_normalized_weights = log_weights - log_total_weight
     log_ess = - jax.nn.logsumexp(2 * log_normalized_weights)
-    resampled_indices = jax.random.categorical(key, log_normalized_weights, shape=(len(log_weights),))
-
+    resampled_indices = jax.random.categorical(key, log_weights, shape=(len(log_weights),))
+    # jax.debug.print("{w}", w=log_normalized_weights)
+    # jax.debug.print("{r}", r=resampled_indices)
     ess = jnp.exp(log_ess)
     do_resample = ess < ess_threshold
     particle_inds = (do_resample * resampled_indices) + ((1 - do_resample) * jnp.arange(len(log_weights)))
@@ -71,8 +72,8 @@ def run_particle_filter(gt_trace, gen_fns, n_particles, keygen, ess_threshold=50
     obs_y0 = all_y_obs[0]
 
     keys = keygen(n_particles)
-    model_init_traces, model_scores = init_prior(keys, C.n(), (max_fireflies,)) 
-    model_init_chms, model_states = jax.vmap(lambda tr: (tr.get_choices(), tr.get_retval()))(model_init_traces)
+    # model_init_traces, model_scores = init_prior(keys, C.n(), (max_fireflies,)) 
+    # model_init_chms, model_states = jax.vmap(lambda tr: (tr.get_choices(), tr.get_retval()))(model_init_traces)
 
     keys = keygen(n_particles)
     prop_chms, prop_scores, prop_states = init_proposal(keys, (max_fireflies, obs_x0, obs_y0))

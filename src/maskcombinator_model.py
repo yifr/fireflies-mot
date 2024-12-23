@@ -43,7 +43,7 @@ def init_firefly():
     vx = genjax.truncated_normal(0., .5, MIN_VELOCITY, MAX_VELOCITY) @ "vx"
     vy = genjax.truncated_normal(0., .5, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
 
-    blink_rate = genjax.normal(0.1, 0.01) @ "blink_rate"
+    blink_rate = genjax.normal(0.9, 0.01) @ "blink_rate"
     blinking = False
     state_duration = jax.lax.select(True, 0, 0)
 
@@ -78,12 +78,12 @@ def step_firefly(firefly):
     was_blinking = firefly["blinking"]
     state_duration = firefly["state_duration"]
 
-    new_vx = genjax.truncated_normal(vx, .1, MIN_VELOCITY, MAX_VELOCITY) @ "vx"
-    new_vy = genjax.truncated_normal(vy, .1, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
+    new_vx = genjax.truncated_normal(vx, .3, MIN_VELOCITY, MAX_VELOCITY) @ "vx"
+    new_vy = genjax.truncated_normal(vy, .3, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
 
     # Switch direction on collision
-    new_vx = jnp.where((x + new_vx >= SCENE_SIZE - 1.) | (x + new_vx <= 1.), -new_vx, new_vx)
-    new_vy = jnp.where((y + new_vy >= SCENE_SIZE - 1.) | (y + new_vy <= 1.), -new_vy, new_vy)
+    new_vx = jnp.where((x + new_vx > SCENE_SIZE - 1.) | (x + new_vx < 1.), -new_vx, new_vx)
+    new_vy = jnp.where((y + new_vy > SCENE_SIZE - 1.) | (y + new_vy < 1.), -new_vy, new_vy)
 
     # Update position
     new_x = jnp.clip(x + new_vx, 0., SCENE_SIZE.astype(jnp.float32))

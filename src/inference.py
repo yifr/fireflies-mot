@@ -183,9 +183,9 @@ def proposal_dynamics_step(prev_state, obs_x, obs_y):
     target_vy = obs_y[index] - prev_y
     vx_diff = jnp.abs(target_vx - prev_vx)
     vy_diff = jnp.abs(target_vy - prev_vy)
-    vx = normal.or_else(normal)(nearby_blinks, (target_vx, 0.1), 
+    vx = normal.or_else(normal)(nearby_blinks, (target_vx, 0.01), 
                                                     (prev_vx, .3)) @ "vx"
-    vy = normal.or_else(normal)(nearby_blinks, (target_vy, 0.1), 
+    vy = normal.or_else(normal)(nearby_blinks, (target_vy, 0.01), 
                                                     (prev_vy, .3)) @ "vy"
     
     # Switch direction on collision
@@ -210,7 +210,7 @@ def proposal_dynamics_step(prev_state, obs_x, obs_y):
 
 
 
-def assign_observations(positions, observations, max_velocity=5., inf_val=jnp.inf):
+def assign_observations(positions, observations, max_velocity=3., inf_val=jnp.inf):
     """
     Greedily assigns each observation to closest position, then fills remaining positions.
     Args:
@@ -274,9 +274,9 @@ def greedy_proposal_dynamics_step(prev_state, obs_x, obs_y, assignment):
     target_vx = obs_x[assignment] - prev_x
     target_vy = obs_y[assignment] - prev_y
     
-    vx = normal.or_else(normal)(nearby_blinks, (target_vx, 0.05), 
+    vx = normal.or_else(normal)(nearby_blinks, (target_vx, 0.01), 
                                                     (prev_vx, .3)) @ "vx"
-    vy = normal.or_else(normal)(nearby_blinks, (target_vy, 0.05), 
+    vy = normal.or_else(normal)(nearby_blinks, (target_vy, 0.01), 
                                                     (prev_vy, .3)) @ "vy"
     
     # Switch direction on collision
