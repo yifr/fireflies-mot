@@ -9,37 +9,11 @@ import sys
 sys.path.append("../src/")
 from distributions import *
 
-SCENE_SIZE = 32. 
-MAX_VELOCITY = 5.
-MIN_VELOCITY = -5.
-
+from config import SCENE_SIZE, MIN_VELOCITY, MAX_VELOCITY, BLINK_MEAN, BLINK_STD
 
 ##################################
 # INITIALIZATION PROPOSALS
 ##################################
-@gen
-def init_firefly_at_random():
-    init_x = uniform(1., SCENE_SIZE) @ "x"
-    init_y = uniform(1., SCENE_SIZE) @ "y"
-
-    vx = truncnorm(0., .5, MIN_VELOCITY, MAX_VELOCITY) @ "vx"
-    vy = truncnorm(0., .5, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
-
-    blink_rate = normal(0.1, 0.01) @ "blink_rate"
-    blinking = jnp.bool(0)
-    #state_duration = jax.lax.select(True, 0, 0)
-
-    firefly = {
-        "x": init_x,
-        "y": init_y,
-        "vx": vx,
-        "vy": vy,
-        "blink_rate": blink_rate,
-        "blinking": blinking,
-    }
-
-    return firefly
-
 @gen
 def init_firefly_at_loc(obs_x, obs_y):
     """
@@ -55,7 +29,7 @@ def init_firefly_at_loc(obs_x, obs_y):
     x = truncnorm.or_else(uniform)(is_valid_x, (obs_x - vx, 0.01, 0., SCENE_SIZE), (0., SCENE_SIZE)) @ "x"
     y = truncnorm.or_else(uniform)(is_valid_y, (obs_y - vy, 0.01, 0., SCENE_SIZE), (0., SCENE_SIZE)) @ "y"
 
-    blink_rate = normal(0.1, 0.01) @ "blink_rate"
+    blink_rate = normal(BLINK_MEAN, BLINK_STD) @ "blink_rate"
     blinking = jnp.bool(0)
     
     firefly = {
@@ -68,14 +42,6 @@ def init_firefly_at_loc(obs_x, obs_y):
     }
 
     return firefly
-
-@gen 
-def model_init_fireflies(max_fireflies):
-    n_fireflies = labcat(unicat(max_fireflies), max_fireflies) @ "n_fireflies"
-    masks = jnp.array(max_fireflies <= n_fireflies)
-    init_states = init_firefly_at_random.mask().vmap(in_axes=(0))(masks) @ "init"
-    return init_states
-
 
 @gen 
 def proposal_init_fireflies(max_fireflies, x_obs, y_obs):
@@ -96,55 +62,6 @@ def proposal_init_fireflies(max_fireflies, x_obs, y_obs):
 ##################################
 # DYNAMICS 
 #################################
-
-@gen 
-def prior_dynamics_step(prev_state):
-    """
-    Single step dynamics for an individual prev_state.
-    Random walk with small drift on velocity and position
-    truncated to min/max velocity and position in scene bounds
-
-    Args:
-        prev_state: dictionary of prev_state 
-    Returns: 
-        prev_state: dictionary of updated state
-    """
-    prev_x = prev_state["x"]
-    prev_y = prev_state["y"]
-    prev_vx = prev_state["vx"]
-    prev_vy = prev_state["vy"]
-    blink_rate = prev_state["blink_rate"]
-
-    # Sample a new trajectory
-    new_vx = genjax.normal(prev_vx, .3) @ "vx"
-    new_vy = genjax.normal(prev_vy, .3) @ "vy"
-
-    # Switch direction on collision
-    new_vx = jnp.where((prev_x + new_vx >= SCENE_SIZE - 1.) | (prev_x + new_vx <= 1.), -new_vx, new_vx)
-    new_vy = jnp.where((prev_y + new_vy >= SCENE_SIZE - 1.) | (prev_y + new_vy <= 1.), -new_vy, new_vy)
-
-    # Clip new position inside scene
-    new_x = jnp.clip(prev_x + new_vx, 0., SCENE_SIZE)
-    new_y = jnp.clip(prev_y + new_vy, 0., SCENE_SIZE)
-
-    # Add some noise
-    new_x = truncnorm(new_x, 0.01, 0., SCENE_SIZE) @ "x" 
-    new_y = truncnorm(new_y, 0.01, 0., SCENE_SIZE) @ "y"
-    
-    # Update blinking 
-    blinking = flip(blink_rate) @ "blinking"
-
-    new_state = {
-        "x": new_x,
-        "y": new_y,
-        "vx": new_vx,
-        "vy": new_vy,
-        "blink_rate": blink_rate,
-        "blinking": blinking,
-    }
-    
-    return new_state
-
 def calculate_distances_from_pos(position, observations):
     """
     Args:
@@ -161,7 +78,6 @@ def calculate_distances_from_pos(position, observations):
     distances = jnp.linalg.norm(diff, axis=0)
     valid = jnp.all(observations > 0., axis=0)
     return jnp.where(valid , distances, jnp.inf)
-
 
 @gen
 def proposal_dynamics_step(prev_state, obs_x, obs_y):
@@ -268,7 +184,7 @@ def greedy_proposal_dynamics_step(prev_state, obs_x, obs_y, assignment):
     blink_rate = prev_state["blink_rate"]
     blinking = prev_state["blinking"]
     
-    nearby_blinks = jax.lax.cond(assignment > -1, lambda: True, lambda: False)
+    nearby_blinks = jax.lax.cond(obs_x[assignment] > -1., lambda: True, lambda: False)
     blinking = flip.or_else(flip)(nearby_blinks, (1.,), (0.,)) @ "blinking"
     
     target_vx = obs_x[assignment] - prev_x
@@ -315,7 +231,6 @@ def mutually_exclusive_proposal_dynamics(states, obs_x, obs_y):
     new_states = proposal_fn(masks, states.value, obs_x, obs_y, assignments) @ "steps"
     return new_states
 
-
 @gen
 def masked_proposal_dynamics(states, obs_x, obs_y):
     """
@@ -326,19 +241,6 @@ def masked_proposal_dynamics(states, obs_x, obs_y):
     masks = states.flag
     proposal_fn = proposal_dynamics_step.mask().vmap(in_axes=(0, 0, None, None))
     new_states = proposal_fn(masks, states.value, obs_x, obs_y) @ "steps"
-    return new_states
-
-
-@gen
-def masked_model_dynamics(states):
-    """
-    States is an (n_fireflies,) array of dicts
-    masks is an (n_fireflies,) array of mask vals
-    obs_x and obs_y are (n_fireflies,) vectors of observations
-    """
-    masks = states.flag
-    model_fn = prior_dynamics_step.mask().vmap(in_axes=(0, 0))
-    new_states = model_fn(masks, states.value) @ "steps"
     return new_states
 
 @gen 

@@ -43,7 +43,7 @@ def init_firefly():
     vx = genjax.truncated_normal(0., .5, MIN_VELOCITY, MAX_VELOCITY) @ "vx"
     vy = genjax.truncated_normal(0., .5, MIN_VELOCITY, MAX_VELOCITY) @ "vy"
 
-    blink_rate = genjax.normal(0.9, 0.01) @ "blink_rate"
+    blink_rate = genjax.normal(BLINK_MEAN, BLINK_STD) @ "blink_rate"
     blinking = False
     state_duration = jax.lax.select(True, 0, 0)
 
