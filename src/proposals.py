@@ -1,9 +1,10 @@
 import genjax
 import jax
 import jax.numpy as jnp
-from genjax import gen, flip, normal, uniform
+from genjax import gen, flip, normal, uniform, categorical
 from genjax import truncated_normal as truncnorm
 from genjax import ChoiceMapBuilder as CMB
+from itertools import permutations
 
 import sys
 sys.path.append("../src/")
@@ -62,7 +63,7 @@ def proposal_init_fireflies(max_fireflies, x_obs, y_obs):
 ##################################
 # DYNAMICS 
 #################################
-def calculate_distances_from_pos(position, observations):
+def calculate_distances_from_pos(position, observations, fill_val=jnp.inf):
     """
     Args:
         position: (2,) array of (x, y) position
@@ -77,7 +78,7 @@ def calculate_distances_from_pos(position, observations):
     diff = pos_expanded - observations
     distances = jnp.linalg.norm(diff, axis=0)
     valid = jnp.all(observations > 0., axis=0)
-    return jnp.where(valid , distances, jnp.inf)
+    return jnp.where(valid, distances, fill_val)
 
 @gen
 def proposal_dynamics_step(prev_state, obs_x, obs_y):
@@ -126,7 +127,7 @@ def proposal_dynamics_step(prev_state, obs_x, obs_y):
 
 
 
-def assign_observations(positions, observations, max_velocity=3., inf_val=jnp.inf):
+def heuristic_assign_observations(positions, observations, max_velocity=3., inf_val=jnp.inf):
     """
     Greedily assigns each observation to closest position, then fills remaining positions.
     Args:
@@ -185,7 +186,7 @@ def greedy_proposal_dynamics_step(prev_state, obs_x, obs_y, assignment):
     blinking = prev_state["blinking"]
     
     nearby_blinks = jax.lax.cond(obs_x[assignment] > -1., lambda: True, lambda: False)
-    blinking = flip.or_else(flip)(nearby_blinks, (1.,), (0.,)) @ "blinking"
+    blinking = flip.or_else(flip)(nearby_blinks, (.999,), (0.001,)) @ "blinking"
     
     target_vx = obs_x[assignment] - prev_x
     target_vy = obs_y[assignment] - prev_y
@@ -216,8 +217,39 @@ def greedy_proposal_dynamics_step(prev_state, obs_x, obs_y, assignment):
     return new_state
 
 
+def compute_assignment_weights(positions, observations, assignment_opts):    
+    """
+    Computes total L2 distance between positions and observations
+    for different enumerated assignments
+    """
+    def calc_weight(assignments, positions, observations):
+        selected_positions = positions[:, assignments]
+        distances = jnp.linalg.norm(selected_positions - observations, axis=0)
+        return jnp.sum(distances)
+
+    distance_calculator = lambda assignments: calc_weight(assignments, positions, observations)
+    weights = jax.vmap(distance_calculator, in_axes=0)(assignment_opts)
+    return weights
+
+
 @gen
-def mutually_exclusive_proposal_dynamics(states, obs_x, obs_y):
+def probabilistic_assignment_proposal(states, obs_x, obs_y):
+    masks = states.flag
+    positions = jnp.array([states.value["x"], states.value["y"]])
+    positions = jnp.where(masks, positions, -10.)
+    observations = jnp.array([obs_x, obs_y])
+    assignment_opts = jnp.array(list(permutations(jnp.arange(len(masks)))))
+    assignment_weights = compute_assignment_weights(positions, observations, assignment_opts)
+    assignment_logits = jnp.log(assignment_weights / jnp.sum(assignment_weights))
+    assignment_index = categorical(assignment_logits) @ "assignments"
+    assignments = assignment_opts[assignment_index]
+    proposal_fn = greedy_proposal_dynamics_step.mask().vmap(in_axes=(0, 0, None, None, 0))
+    new_states = proposal_fn(masks, states.value, obs_x, obs_y, assignments) @ "steps"
+    return new_states
+    
+
+@gen
+def hard_assignment_proposal_dynamics(states, obs_x, obs_y):
     """
     States is a masked object with a dict of state values inside
     masks is an (n_fireflies,) array of mask vals
@@ -226,7 +258,7 @@ def mutually_exclusive_proposal_dynamics(states, obs_x, obs_y):
     masks = states.flag
     positions = jnp.array([states.value["x"], states.value["y"]])
     observations = jnp.array([obs_x, obs_y])
-    assignments = assign_observations(positions, observations)
+    assignments = heuristic_assign_observations(positions, observations)
     proposal_fn = greedy_proposal_dynamics_step.mask().vmap(in_axes=(0, 0, None, None, 0))
     new_states = proposal_fn(masks, states.value, obs_x, obs_y, assignments) @ "steps"
     return new_states

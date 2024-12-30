@@ -1,7 +1,8 @@
-from genjax import gen, normal, flip, uniform
+from genjax import gen, normal, flip, uniform, categorical
 from genjax import truncated_normal as truncnorm
 from distributions import *
-
+import itertools
+import jax
 from config import SCENE_SIZE, MIN_VELOCITY, MAX_VELOCITY, BLINK_MEAN, BLINK_STD
 
 VELOCITY_STD = .3
@@ -35,9 +36,14 @@ def init_firefly_at_random():
     return firefly
 
 @gen 
-def prior_init_fireflies(max_fireflies):
-    n_fireflies = labcat(unicat(max_fireflies), max_fireflies) @ "n_fireflies"
-    masks = jnp.array(max_fireflies <= n_fireflies)
+def prior_init_fireflies(possible_fireflies):
+    """
+    Args:
+        possible_fireflies: jnp.arange(max_fireflies)
+    """
+    n_fireflies = labcat(unicat(possible_fireflies), possible_fireflies) @ "n_fireflies"
+    masks = jnp.array(possible_fireflies <= n_fireflies)
+    max_fireflies = jnp.max(possible_fireflies)
     init_states = init_firefly_at_random.mask().vmap(in_axes=(0))(masks) @ "init"
     return init_states
 
@@ -63,7 +69,7 @@ def prior_dynamics_step(prev_state):
     prev_vx = prev_state["vx"]
     prev_vy = prev_state["vy"]
     blink_rate = prev_state["blink_rate"]
-
+    
     # Sample a new trajectory
     new_vx = normal(prev_vx, VELOCITY_STD) @ "vx"
     new_vy = normal(prev_vy, VELOCITY_STD) @ "vy"
@@ -79,7 +85,7 @@ def prior_dynamics_step(prev_state):
     # Add some noise
     new_x = truncnorm(new_x, POSITION_STD, 0., SCENE_SIZE) @ "x" 
     new_y = truncnorm(new_y, POSITION_STD, 0., SCENE_SIZE) @ "y"
-    
+
     # Update blinking 
     blinking = flip(blink_rate) @ "blinking"
 
@@ -94,8 +100,6 @@ def prior_dynamics_step(prev_state):
     
     return new_state
 
-
-
 @gen
 def masked_prior_dynamics(states):
     """
@@ -106,4 +110,12 @@ def masked_prior_dynamics(states):
     masks = states.flag
     model_fn = prior_dynamics_step.mask().vmap(in_axes=(0, 0))
     new_states = model_fn(masks, states.value) @ "steps"
+    n_fireflies = jnp.sum(masks)
+    
+    possible_assignments = jnp.array(list(itertools.permutations(jnp.arange(n_fireflies)))) # scales poorly
+    assignment_index = UniformCategorical()(jnp.arange(len(possible_assignments))) @ "assignments"
+
+    assignments = possible_assignments[assignment_index]
+    new_states[:n_fireflies] = new_states[assignments]
+
     return new_states

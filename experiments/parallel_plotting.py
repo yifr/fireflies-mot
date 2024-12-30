@@ -6,6 +6,21 @@ import sys
 sys.path.append("/Users/yonifriedman/Research/Tracking/Fireflies/src/")
 from utils import *
 
+
+def get_trajectories_in_range(states, current_step, traj_len):
+    start_step = max(current_step - traj_len, 0)
+    traj_xs = []
+    traj_ys = []
+
+    for step in range(start_step, current_step):
+        state = states[step]
+        xs = state.value["x"][state.flag]
+        ys = state.value["y"][state.flag]
+        traj_xs.append(xs)
+        traj_ys.append(ys)
+
+    return traj_xs, traj_ys
+
 def plot_frame(t, states_over_time, gt_xs, gt_ys, gt_blinks, gt_n_fireflies, n_particles, savedir):
     """
     Plot and save a single frame.

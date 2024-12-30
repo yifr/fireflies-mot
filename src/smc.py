@@ -23,6 +23,7 @@ def prop_chm_to_model_chm(prop_chm):
     model_chm = C["steps", "y"].set(prop_chm["steps", "y"]) | model_chm
     model_chm = C["steps", "vx"].set(prop_chm["steps", "vx"]) | model_chm
     model_chm = C["steps", "vy"].set(prop_chm["steps", "vy"]) | model_chm
+    model_chm = C["assignments"].set(prop_chm["assignments"]) | model_chm
     
     return model_chm
 
