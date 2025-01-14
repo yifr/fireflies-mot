@@ -1,7 +1,7 @@
 from genjax import gen, normal, flip, uniform, categorical
 from genjax import truncated_normal as truncnorm
 from distributions import *
-import itertools
+from itertools import permutations
 import jax
 from config import SCENE_SIZE, MIN_VELOCITY, MAX_VELOCITY, BLINK_MEAN, BLINK_STD
 
@@ -112,10 +112,9 @@ def masked_prior_dynamics(states):
     new_states = model_fn(masks, states.value) @ "steps"
     n_fireflies = jnp.sum(masks)
     
-    possible_assignments = jnp.array(list(itertools.permutations(jnp.arange(n_fireflies)))) # scales poorly
+    possible_assignments = jnp.array(list(permutations(jnp.arange(n_fireflies)))) # scales poorly
     assignment_index = UniformCategorical()(jnp.arange(len(possible_assignments))) @ "assignments"
 
     assignments = possible_assignments[assignment_index]
-    new_states[:n_fireflies] = new_states[assignments]
-
+    new_states = jax.lax.dynamic_update_slice(new_states, new_states[assignments], (0, 0))
     return new_states
